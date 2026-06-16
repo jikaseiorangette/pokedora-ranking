@@ -30,15 +30,15 @@ def fetch_ranking(page, store, url):
     print(f"  [{store}] アクセス中: {url}")
     for attempt in range(3):
         try:
-            page.goto(url, wait_until="networkidle", timeout=60000)
+            page.goto(url, wait_until="domcontentloaded", timeout=90000)
             break
         except Exception as e:
             print(f"  失敗({attempt+1}/3): {e}")
             if attempt < 2:
-                time.sleep(10)
+                time.sleep(15)
             else:
                 raise
-    time.sleep(3)
+    time.sleep(8)
 
     soup = BeautifulSoup(page.content(), "html.parser")
     works = []
@@ -532,11 +532,22 @@ def run():
     history = load_history()
 
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page(user_agent=(
+        browser = p.chromium.launch(args=[
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+        ])
+        context = browser.new_context(user_agent=(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         ))
+        context.add_cookies([{
+            "name": "age_check",
+            "value": "1",
+            "domain": "pokedora.com",
+            "path": "/",
+        }])
+        page = context.new_page()
 
         # オトナ向けのみメインページとして生成（がるまに方式に合わせる）
         store = "adt"
