@@ -50,6 +50,14 @@ def fetch_ranking(page, store, url):
     link_count = html.count('/products/detail.php')
     print(f"  [{store}] ページ内の作品リンク数: {link_count}")
 
+    # デバッグ：HTMLの最初の500文字とproduct_id周辺を出力
+    idx = html.find('product_id=')
+    if idx >= 0:
+        print(f"  [{store}] product_id周辺のHTML: {html[idx-100:idx+200]}")
+    else:
+        print(f"  [{store}] product_idがHTMLに見つからない")
+        print(f"  [{store}] HTML先頭500文字: {html[:500]}")
+
     soup = BeautifulSoup(html, "html.parser")
 
     works = []
