@@ -43,7 +43,7 @@ JS_EXTRACT = """
         }
         if (!detailLink) return;
         const href = detailLink.getAttribute('href') || '';
-        const m = href.match(/product_id=(\d+)/);
+        const m = href.match(/product_id=(\\d+)/);
         if (!m) return;
         const pid = m[1];
         if (seen.has(pid)) return;
