@@ -52,13 +52,17 @@ def fetch_ranking(page, store, url):
 
     soup = BeautifulSoup(html, "html.parser")
 
-    # デバッグ：実際のaタグのhrefを10件出力
+    # デバッグ：実際のaタグのhrefを全部出力（重複除く）
     all_links = soup.select("a[href]")
     print(f"  [{store}] 全aタグ数: {len(all_links)}")
-    for a in all_links[:20]:
+    seen_hrefs = set()
+    for a in all_links:
         href = a.get("href", "")
-        if "product" in href or "detail" in href or "ranking" in href:
-            print(f"    href例: {href[:80]}")
+        # 重複除いてユニークなhrefパターンを出力
+        pattern = href[:50]
+        if pattern not in seen_hrefs:
+            seen_hrefs.add(pattern)
+            print(f"    href: {href[:80]}")
 
     works = []
     seen = set()
