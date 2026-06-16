@@ -23,19 +23,74 @@ CATEGORIES = {
 }
 
 # ----------------------------------------
-# スクレイピング
+# スクレイピング（Playwright JS経由）
 # ----------------------------------------
+
+JS_EXTRACT = """
+() => {
+    const results = [];
+    const seen = new Set();
+    const lis = document.querySelectorAll('li');
+    lis.forEach(li => {
+        const links = li.querySelectorAll('a');
+        let detailLink = null;
+        for (const a of links) {
+            const href = a.getAttribute('href') || '';
+            if (href.includes('product_id=')) {
+                detailLink = a;
+                break;
+            }
+        }
+        if (!detailLink) return;
+        const href = detailLink.getAttribute('href') || '';
+        const m = href.match(/product_id=(\d+)/);
+        if (!m) return;
+        const pid = m[1];
+        if (seen.has(pid)) return;
+        seen.add(pid);
+        const title = (detailLink.getAttribute('title') || detailLink.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!title || title.length < 2) return;
+        const vaLinks = li.querySelectorAll('a[href*="tag_type=1"]');
+        const vas = Array.from(vaLinks).map(a => a.textContent.trim()).filter(Boolean);
+        const liText = li.textContent || '';
+        const tagList = ['NEW','配信限定シチュエーション','シチュエーションCD','ドラマCD','割引','特典あり'];
+        const tags = tagList.filter(t => liText.includes(t));
+        const img = li.querySelector('img');
+        let thumb = '';
+        if (img) {
+            const src = img.getAttribute('src') || '';
+            if (src && !src.includes('nowprinting')) {
+                thumb = src.startsWith('http') ? src : 'https://pokedora.com' + src;
+            }
+        }
+        const workUrl = href.startsWith('http') ? href : 'https://pokedora.com' + href;
+        results.push({
+            product_id: pid,
+            title: title,
+            voice_actor: vas.join('、'),
+            tags: tags,
+            thumb_url: thumb,
+            work_url: workUrl,
+        });
+    });
+    return results;
+}
+"""
 
 def fetch_ranking(page, store, url):
     print(f"  [{store}] アクセス中: {url}")
     for attempt in range(3):
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=90000)
-            # 作品リンクが現れるまで最大30秒待機
+            # ランキングliが現れるまで待機
             try:
-                page.wait_for_selector("a[href*='/products/detail.php']", timeout=30000)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('a[href*=\"product_id\"]').length > 0",
+                    timeout=30000
+                )
             except Exception:
                 pass
+            time.sleep(3)
             break
         except Exception as e:
             print(f"  失敗({attempt+1}/3): {e}")
@@ -43,73 +98,18 @@ def fetch_ranking(page, store, url):
                 time.sleep(15)
             else:
                 raise
-    time.sleep(5)
 
-    # デバッグ：ページのリンク数を確認
-    html = page.content()
-    link_count = html.count('/products/detail.php')
-    print(f"  [{store}] ページ内の作品リンク数: {link_count}")
+    # JavaScriptで直接DOM情報を取得
+    items = page.evaluate(JS_EXTRACT)
+    print(f"  [{store}] JS取得件数: {len(items)}")
 
-    soup = BeautifulSoup(html, "html.parser")
-
-    # デバッグ：BeautifulSoupでaタグのhrefを直接確認
-    sample_links = soup.find_all("a")
-    for a in sample_links[:5]:
-        print(f"  BS href: {repr(a.get('href', ''))[:80]}")
-
+    # 30件に絞って順位付け
     works = []
-    seen = set()
-
-    # hrefにdetail.phpを含む全aタグを取得
-    for link in soup.find_all("a"):
-        if len(works) >= 30:
-            break
-        href = link.get("href", "") or ""
-        if "product_id" not in href and "detail.php" not in href:
-            continue
-        m = re.search(r'product_id=(\d+)', href)
-        if not m:
-            continue
-        pid = m.group(1)
-        if pid in seen:
-            continue
-        seen.add(pid)
-
-        title = (link.get("title") or link.get_text()).strip()
-        title = re.sub(r'\s+', ' ', title)
-        if not title or len(title) < 2:
-            continue
-
-        work_url = href if href.startswith("http") else f"https://pokedora.com{href}"
-
-        li = link.find_parent("li")
-        voice_actor = ""
-        tags = []
-        thumb_url = ""
-
-        if li:
-            vas = [a.get_text(strip=True) for a in li.select("a[href*='tag_type=1']") if a.get_text(strip=True)]
-            voice_actor = "、".join(vas)
-            li_text = li.get_text()
-            for tc in ["NEW", "配信限定シチュエーション", "シチュエーションCD", "ドラマCD", "割引", "特典あり"]:
-                if tc in li_text:
-                    tags.append(tc)
-            img = li.select_one("img")
-            if img:
-                src = img.get("src", "")
-                if src and "nowprinting" not in src:
-                    thumb_url = src if src.startswith("http") else f"https://pokedora.com{src}"
-
-        works.append({
-            "rank":        len(works) + 1,
-            "product_id":  pid,
-            "title":       title,
-            "voice_actor": voice_actor,
-            "tags":        tags,
-            "thumb_url":   thumb_url,
-            "work_url":    work_url,
-        })
-        print(f"    {len(works)}位: {title[:40]}")
+    for item in items[:30]:
+        item['rank'] = len(works) + 1
+        item['store'] = store
+        works.append(item)
+        print(f"    {len(works)}位: {item['title'][:40]}")
 
     print(f"  [{store}] {len(works)}件取得")
     return works
@@ -137,11 +137,9 @@ def save_latest(store, works):
     path.write_text(json.dumps(works, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def update_history(history, store, today, works):
-    """historyにその日のランキングを記録（product_id: rank の辞書形式）"""
     if store not in history:
         history[store] = {}
     history[store][today] = {w["product_id"]: w["rank"] for w in works}
-    # 90日以上前のデータを削除
     cutoff = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=90)).strftime("%Y-%m-%d")
     history[store] = {d: v for d, v in history[store].items() if d >= cutoff}
     return history
@@ -227,7 +225,6 @@ tbody tr:hover td{background:var(--rose-50)}
 .genres{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
 .gtag{display:inline-block;font-size:9px;background:var(--rose-50);color:var(--text-muted);border:0.5px solid var(--border-light);border-radius:20px;padding:1px 6px;white-space:nowrap}
 .rise-pill{display:inline-flex;align-items:center;gap:2px;background:var(--rose-50);color:var(--rose-600);border:0.5px solid var(--border);border-radius:20px;padding:3px 8px;font-size:11px;font-weight:500}
-.new-pill{display:inline-flex;align-items:center;gap:2px;background:#ecfdf5;color:#065f46;border:0.5px solid #6ee7b7;border-radius:20px;padding:3px 8px;font-size:11px;font-weight:500}
 .tup{font-size:11px;font-weight:500;color:#be123c}
 .tdn{font-size:11px;font-weight:500;color:#0369a1}
 .tsm{font-size:11px;color:var(--text-muted)}
@@ -416,7 +413,7 @@ def rank_badge(rank):
     return f'<span class="rb {cls}">{rank}</span>'
 
 def thumb_html(w):
-    if w["thumb_url"]:
+    if w.get("thumb_url"):
         return f'<img src="{w["thumb_url"]}" alt="" loading="lazy">'
     return '<div style="width:146px;height:110px;border-radius:8px;background:var(--rose-100);display:flex;align-items:center;justify-content:center;font-size:28px">🎧</div>'
 
@@ -438,7 +435,7 @@ def change_html(rank_change, is_new):
 def make_row(w, rank_change, is_new, canvas_id):
     rb = rank_badge(w["rank"])
     th = thumb_html(w)
-    tg = tags_html(w["tags"])
+    tg = tags_html(w.get("tags", []))
     ch = change_html(rank_change, is_new)
     return f"""        <tr>
             <td class="thumb-wrap">
@@ -447,10 +444,10 @@ def make_row(w, rank_change, is_new, canvas_id):
             </td>
             <td class="title-cell">
                 <div class="work-title"><a href="{w['work_url']}" target="_blank" rel="noopener">{w['title']}</a></div>
-                <div class="work-circle">{w['voice_actor']}</div>
+                <div class="work-circle">{w.get('voice_actor','')}</div>
                 {tg}
             </td>
-            <td style="font-size:11px;color:var(--text-sub)">{w['voice_actor']}</td>
+            <td style="font-size:11px;color:var(--text-sub)">{w.get('voice_actor','')}</td>
             <td>{ch}</td>
             <td class="chart-cell"><canvas id="{canvas_id}" class="chart-wrap" data-pid="{w['product_id']}"></canvas></td>
         </tr>"""
@@ -458,7 +455,7 @@ def make_row(w, rank_change, is_new, canvas_id):
 def make_rising_row(w, rise, canvas_id):
     rb = rank_badge(w["rank"])
     th = thumb_html(w)
-    tg = tags_html(w["tags"])
+    tg = tags_html(w.get("tags", []))
     return f"""        <tr>
             <td class="thumb-wrap">
                 <span class="thumb-rank">{rb}</span>
@@ -466,23 +463,19 @@ def make_rising_row(w, rise, canvas_id):
             </td>
             <td class="title-cell">
                 <div class="work-title"><a href="{w['work_url']}" target="_blank" rel="noopener">{w['title']}</a></div>
-                <div class="work-circle">{w['voice_actor']}</div>
+                <div class="work-circle">{w.get('voice_actor','')}</div>
                 {tg}
             </td>
-            <td style="font-size:11px;color:var(--text-sub)">{w['voice_actor']}</td>
+            <td style="font-size:11px;color:var(--text-sub)">{w.get('voice_actor','')}</td>
             <td><span class="rise-pill">▲{rise}位UP</span></td>
             <td class="chart-cell"><canvas id="{canvas_id}" class="chart-wrap" data-pid="{w['product_id']}"></canvas></td>
         </tr>"""
 
 def generate_html(ranking, rising, graph_data, today_str, total_works, new_today):
-    # TOP10のみ表示（がるまにに合わせる）
     top10 = ranking[:10]
-
-    # 前日ランク取得用マップ
-    prev_map = {}
     today_dt = datetime.strptime(today_str.replace("/", "-"), "%Y-%m-%d")
     prev_date = (today_dt - timedelta(days=1)).strftime("%Y-%m-%d")
-    # graph_dataから前日ランクを引く
+    prev_map = {}
     for pid, gd in graph_data.items():
         if prev_date in gd["labels"]:
             idx = gd["labels"].index(prev_date)
@@ -490,7 +483,6 @@ def generate_html(ranking, rising, graph_data, today_str, total_works, new_today
             if v and v <= 30:
                 prev_map[pid] = v
 
-    # ランキング行
     ranking_rows = []
     for i, w in enumerate(top10):
         pid = w["product_id"]
@@ -499,7 +491,6 @@ def generate_html(ranking, rising, graph_data, today_str, total_works, new_today
         is_new = (pid not in prev_map)
         ranking_rows.append(make_row(w, rank_change, is_new, f"wc_{i+1}"))
 
-    # 急上昇セクション
     if rising:
         rows = []
         for i, (w, rise) in enumerate(rising):
@@ -568,11 +559,9 @@ def run():
         }])
         page = context.new_page()
 
-        # オトナ向けのみメインページとして生成（がるまに方式に合わせる）
         store = "adt"
         label, url = CATEGORIES[store]
         print(f"\n--- {label} ---")
-
         works = fetch_ranking(page, store, url)
         browser.close()
 
@@ -580,16 +569,13 @@ def run():
         print("取得データなし・終了")
         return
 
-    # JSON保存
     save_latest(store, works)
     history = update_history(history, store, today, works)
     save_history(history)
 
-    # 前日データ
     prev_date = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
     prev_data = history.get(store, {}).get(prev_date, {})
 
-    # 急上昇（前日比10位以上上昇、前日圏外除く）
     rising = []
     for w in works:
         pid = w["product_id"]
@@ -599,22 +585,17 @@ def run():
     rising.sort(key=lambda x: -x[1])
     rising = rising[:5]
 
-    # グラフデータ（TOP10 + 急上昇）
     all_pids = list(dict.fromkeys(
         [w["product_id"] for w in works[:10]] +
         [w["product_id"] for w, _ in rising]
     ))
     graph_data = build_graph_data(history, store, all_pids, today)
 
-    # 統計
     total_works = len(works)
-    # 新着＝前日のランキングになかった作品
     new_today = sum(1 for w in works if w["product_id"] not in prev_data)
 
-    # HTML生成
     html = generate_html(works, rising, graph_data, today_str, total_works, new_today)
 
-    # docs/index.html に出力（GitHub Pages用）
     docs_dir = Path("docs")
     docs_dir.mkdir(exist_ok=True)
     (docs_dir / "index.html").write_text(html, encoding="utf-8")
