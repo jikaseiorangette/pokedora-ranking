@@ -26,75 +26,54 @@ CATEGORIES = {
 # スクレイピング（Playwright JS経由）
 # ----------------------------------------
 
-JS_EXTRACT = """
-() => {
-  var results = [];
-  var seen = {};
-  var lis = document.querySelectorAll('li.top_products_el');
-  if (lis.length === 0) {
-    lis = document.querySelectorAll('li');
-  }
-  for (var i = 0; i < lis.length; i++) {
-    var li = lis[i];
-    var as = li.getElementsByTagName('a');
-    var detailLink = null;
-    for (var j = 0; j < as.length; j++) {
-      var h = as[j].getAttribute('href') || '';
-      if (h.indexOf('product_id') !== -1) {
-        detailLink = as[j];
-        break;
-      }
-    }
-    if (!detailLink) continue;
-    var href = detailLink.getAttribute('href') || '';
-    var pidIdx = href.indexOf('product_id=');
-    if (pidIdx === -1) continue;
-    var pid = href.substring(pidIdx + 11).split('&')[0];
-    if (!pid || seen[pid]) continue;
-    seen[pid] = true;
-    var title = detailLink.getAttribute('title') || detailLink.textContent || '';
-    title = title.replace(/[\t\n\r ]+/g, ' ').trim();
-    if (!title || title.length < 2) continue;
-    var vaLinks = li.querySelectorAll('a');
-    var vas = [];
-    for (var k = 0; k < vaLinks.length; k++) {
-      var vhref = vaLinks[k].getAttribute('href') || '';
-      if (vhref.indexOf('tag_type=1') !== -1) {
-        var vt = vaLinks[k].textContent.trim();
-        if (vt) vas.push(vt);
-      }
-    }
-    var liText = li.textContent || '';
-    var tagList = [
-      'NEW', '\u914d\u4fe1\u9650\u5b9aシチュエーションCD',
-      'シチュエーションCD', 'ドラマCD', '\u5272\u5f15', '\u7279\u5178\u3042\u308a'
-    ];
-    var tags = [];
-    for (var t = 0; t < tagList.length; t++) {
-      if (liText.indexOf(tagList[t]) !== -1) tags.push(tagList[t]);
-    }
-    var img = li.querySelector('img');
-    var thumb = '';
-    if (img) {
-      var src = img.getAttribute('src') || '';
-      if (src && src.indexOf('nowprinting') === -1) {
-        thumb = src.indexOf('http') === 0 ? src : 'https://pokedora.com' + src;
-      }
-    }
-    var workUrl = href.indexOf('http') === 0 ? href : 'https://pokedora.com' + href;
-    results.push({
-      product_id: pid,
-      title: title,
-      voice_actor: vas.join('\u3001'),
-      tags: tags,
-      thumb_url: thumb,
-      work_url: workUrl
-    });
-    if (results.length >= 30) break;
-  }
-  return results;
-}
-"""
+JS_EXTRACT = (
+    "() => {"
+    "  var results = [];"
+    "  var seen = {};"
+    "  var lis = document.querySelectorAll('li.top_products_el');"
+    "  if (!lis.length) lis = document.querySelectorAll('li');"
+    "  for (var i = 0; i < lis.length && results.length < 30; i++) {"
+    "    var li = lis[i];"
+    "    var as = li.getElementsByTagName('a');"
+    "    var dl = null;"
+    "    for (var j = 0; j < as.length; j++) {"
+    "      if ((as[j].getAttribute('href') || '').indexOf('product_id') !== -1) {"
+    "        dl = as[j]; break;"
+    "      }"
+    "    }"
+    "    if (!dl) continue;"
+    "    var href = dl.getAttribute('href') || '';"
+    "    var pi = href.indexOf('product_id=');"
+    "    if (pi === -1) continue;"
+    "    var pid = href.substring(pi + 11).split('&')[0];"
+    "    if (!pid || seen[pid]) continue;"
+    "    seen[pid] = 1;"
+    "    var t = (dl.getAttribute('title') || dl.textContent || '').trim();"
+    "    if (!t || t.length < 2) continue;"
+    "    var vas = [];"
+    "    for (var k = 0; k < as.length; k++) {"
+    "      if ((as[k].getAttribute('href') || '').indexOf('tag_type=1') !== -1) {"
+    "        var vt = as[k].textContent.trim();"
+    "        if (vt) vas.push(vt);"
+    "      }"
+    "    }"
+    "    var lt = li.textContent || '';"
+    "    var tl = ['NEW','\u914d\u4fe1\u9650\u5b9a\u30b7\u30c1\u30e5\u30a8\u30fc\u30b7\u30e7\u30f3CD','\u30b7\u30c1\u30e5\u30a8\u30fc\u30b7\u30e7\u30f3CD','\u5272\u5f15','\u7279\u5178\u3042\u308a'];"
+    "    var tags = tl.filter(function(x){ return lt.indexOf(x) !== -1; });"
+    "    var img = li.querySelector('img');"
+    "    var thumb = '';"
+    "    if (img) {"
+    "      var src = img.getAttribute('src') || '';"
+    "      if (src && src.indexOf('nowprinting') === -1)"
+    "        thumb = src.indexOf('http') === 0 ? src : 'https://pokedora.com' + src;"
+    "    }"
+    "    var wu = href.indexOf('http') === 0 ? href : 'https://pokedora.com' + href;"
+    "    results.push({product_id:pid,title:t,voice_actor:vas.join('\u3001'),tags:tags,thumb_url:thumb,work_url:wu});"
+    "  }"
+    "  return results;"
+    "}"
+)
+
 def fetch_ranking(page, store, url):
     print(f"  [{store}] アクセス中: {url}")
     for attempt in range(3):
