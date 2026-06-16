@@ -26,56 +26,51 @@ CATEGORIES = {
 # スクレイピング（Playwright JS経由）
 # ----------------------------------------
 
-JS_EXTRACT = """
-() => {
-    const results = [];
-    const seen = new Set();
-    const lis = document.querySelectorAll('li');
-    lis.forEach(li => {
-        const links = li.querySelectorAll('a');
-        let detailLink = null;
-        for (const a of links) {
-            const href = a.getAttribute('href') || '';
-            if (href.includes('product_id=')) {
-                detailLink = a;
-                break;
-            }
-        }
-        if (!detailLink) return;
-        const href = detailLink.getAttribute('href') || '';
-        const m = href.match(/product_id=(\\d+)/);
-        if (!m) return;
-        const pid = m[1];
-        if (seen.has(pid)) return;
-        seen.add(pid);
-        const title = (detailLink.getAttribute('title') || detailLink.textContent || '').replace(/\s+/g, ' ').trim();
-        if (!title || title.length < 2) return;
-        const vaLinks = li.querySelectorAll('a[href*="tag_type=1"]');
-        const vas = Array.from(vaLinks).map(a => a.textContent.trim()).filter(Boolean);
-        const liText = li.textContent || '';
-        const tagList = ['NEW','配信限定シチュエーション','シチュエーションCD','ドラマCD','割引','特典あり'];
-        const tags = tagList.filter(t => liText.includes(t));
-        const img = li.querySelector('img');
-        let thumb = '';
-        if (img) {
-            const src = img.getAttribute('src') || '';
-            if (src && !src.includes('nowprinting')) {
-                thumb = src.startsWith('http') ? src : 'https://pokedora.com' + src;
-            }
-        }
-        const workUrl = href.startsWith('http') ? href : 'https://pokedora.com' + href;
-        results.push({
-            product_id: pid,
-            title: title,
-            voice_actor: vas.join('、'),
-            tags: tags,
-            thumb_url: thumb,
-            work_url: workUrl,
-        });
-    });
-    return results;
-}
-"""
+JS_EXTRACT = (
+    "() => {"
+    "  const results = [];"
+    "  const seen = new Set();"
+    "  const lis = document.querySelectorAll('li');"
+    "  lis.forEach(li => {"
+    "    const links = li.querySelectorAll('a');"
+    "    let detailLink = null;"
+    "    for (const a of links) {"
+    "      const href = a.getAttribute('href') || '';"
+    "      if (href.indexOf('product_id=') !== -1) { detailLink = a; break; }"
+    "    }"
+    "    if (!detailLink) return;"
+    "    const href = detailLink.getAttribute('href') || '';"
+    "    const pidMatch = href.match(/product_id=(\\d+)/);"
+    "    if (!pidMatch) return;"
+    "    const pid = pidMatch[1];"
+    "    if (seen.has(pid)) return;"
+    "    seen.add(pid);"
+    "    const rawTitle = detailLink.getAttribute('title') || detailLink.textContent || '';"
+    "    const title = rawTitle.replace(/\\s+/g, ' ').trim();"
+    "    if (!title || title.length < 2) return;"
+    "    const vaLinks = li.querySelectorAll('a[href*=\"tag_type=1\"]');"
+    "    const vas = Array.from(vaLinks).map(a => a.textContent.trim()).filter(Boolean);"
+    "    const liText = li.textContent || '';"
+    "    const tagList = ['NEW','\u914d\u4fe1\u9650\u5b9a\u30b7\u30c1\u30e5\u30a8\u30fc\u30b7\u30e7\u30f3CD','\u30b7\u30c1\u30e5\u30a8\u30fc\u30b7\u30e7\u30f3CD','\u30c9\u30e9\u30de\u30a2\u30a4\u30c6\u30e0\u30eb','\u5272\u5f15','\u7279\u5178\u3042\u308a'];"
+    "    const tags = tagList.filter(t => liText.indexOf(t) !== -1);"
+    "    const img = li.querySelector('img');"
+    "    let thumb = '';"
+    "    if (img) {"
+    "      const src = img.getAttribute('src') || '';"
+    "      if (src && src.indexOf('nowprinting') === -1) {"
+    "        thumb = src.startsWith('http') ? src : 'https://pokedora.com' + src;"
+    "      }"
+    "    }"
+    "    const workUrl = href.startsWith('http') ? href : 'https://pokedora.com' + href;"
+    "    results.push({"
+    "      product_id: pid, title: title,"
+    "      voice_actor: vas.join('\u3001'),"
+    "      tags: tags, thumb_url: thumb, work_url: workUrl"
+    "    });"
+    "  });"
+    "  return results;"
+    "}"
+)
 
 def fetch_ranking(page, store, url):
     print(f"  [{store}] アクセス中: {url}")
