@@ -51,6 +51,15 @@ def fetch_ranking(page, store, url):
     print(f"  [{store}] ページ内の作品リンク数: {link_count}")
 
     soup = BeautifulSoup(html, "html.parser")
+
+    # デバッグ：実際のaタグのhrefを10件出力
+    all_links = soup.select("a[href]")
+    print(f"  [{store}] 全aタグ数: {len(all_links)}")
+    for a in all_links[:20]:
+        href = a.get("href", "")
+        if "product" in href or "detail" in href or "ranking" in href:
+            print(f"    href例: {href[:80]}")
+
     works = []
     seen = set()
 
