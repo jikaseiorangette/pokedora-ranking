@@ -102,7 +102,7 @@ def fetch_ranking(page, store, url):
     )
     print(f"  [{store}] 最初のli: {first_li_html}")
     has_product = page.evaluate(
-        "() => document.querySelectorAll('a[href*="product_id"]').length"
+        "() => document.querySelectorAll('a[href*=\'product_id\']').length"
     )
     print(f"  [{store}] product_idリンク数(JS): {has_product}")
 
