@@ -26,61 +26,12 @@ CATEGORIES = {
 # スクレイピング（Playwright JS経由）
 # ----------------------------------------
 
-JS_EXTRACT = (
-    "() => {"
-    "  var results = [];"
-    "  var seen = {};"
-    "  var lis = document.querySelectorAll('li.top_products_el');"
-    "  if (!lis.length) lis = document.querySelectorAll('li');"
-    "  for (var i = 0; i < lis.length && results.length < 30; i++) {"
-    "    var li = lis[i];"
-    "    var as = li.getElementsByTagName('a');"
-    "    var dl = null;"
-    "    for (var j = 0; j < as.length; j++) {"
-    "      if ((as[j].getAttribute('href') || '').indexOf('product_id') !== -1) {"
-    "        dl = as[j]; break;"
-    "      }"
-    "    }"
-    "    if (!dl) continue;"
-    "    var href = dl.getAttribute('href') || '';"
-    "    var pi = href.indexOf('product_id=');"
-    "    if (pi === -1) continue;"
-    "    var pid = href.substring(pi + 11).split('&')[0];"
-    "    if (!pid || seen[pid]) continue;"
-    "    seen[pid] = 1;"
-    "    var t = (dl.getAttribute('title') || dl.textContent || '').trim();"
-    "    if (!t || t.length < 2) continue;"
-    "    var vas = [];"
-    "    for (var k = 0; k < as.length; k++) {"
-    "      if ((as[k].getAttribute('href') || '').indexOf('tag_type=1') !== -1) {"
-    "        var vt = as[k].textContent.trim();"
-    "        if (vt) vas.push(vt);"
-    "      }"
-    "    }"
-    "    var lt = li.textContent || '';"
-    "    var tl = ['NEW','\u914d\u4fe1\u9650\u5b9a\u30b7\u30c1\u30e5\u30a8\u30fc\u30b7\u30e7\u30f3CD','\u30b7\u30c1\u30e5\u30a8\u30fc\u30b7\u30e7\u30f3CD','\u5272\u5f15','\u7279\u5178\u3042\u308a'];"
-    "    var tags = tl.filter(function(x){ return lt.indexOf(x) !== -1; });"
-    "    var img = li.querySelector('img');"
-    "    var thumb = '';"
-    "    if (img) {"
-    "      var src = img.getAttribute('src') || '';"
-    "      if (src && src.indexOf('nowprinting') === -1)"
-    "        thumb = src.indexOf('http') === 0 ? src : 'https://pokedora.com' + src;"
-    "    }"
-    "    var wu = href.indexOf('http') === 0 ? href : 'https://pokedora.com' + href;"
-    "    results.push({product_id:pid,title:t,voice_actor:vas.join('\u3001'),tags:tags,thumb_url:thumb,work_url:wu});"
-    "  }"
-    "  return results;"
-    "}"
-)
-
 def fetch_ranking(page, store, url):
     print(f"  [{store}] アクセス中: {url}")
     for attempt in range(3):
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=90000)
-            # ページ描画待機
-            time.sleep(3)
+            time.sleep(8)
             break
         except Exception as e:
             print(f"  失敗({attempt+1}/3): {e}")
@@ -89,20 +40,86 @@ def fetch_ranking(page, store, url):
             else:
                 raise
 
-    # JavaScriptで直接DOM情報を取得
-    items = page.evaluate(JS_EXTRACT)
-    print(f"  [{store}] JS取得件数: {len(items)}")
-
-    # 30件に絞って順位付け
     works = []
-    for item in items[:30]:
-        item['rank'] = len(works) + 1
-        item['store'] = store
-        works.append(item)
-        print(f"    {len(works)}位: {item['title'][:40]}")
+    seen = set()
+
+    # Playwright APIで直接全aタグを取得
+    all_anchors = page.query_selector_all("a")
+    print(f"  [{store}] aタグ数: {len(all_anchors)}")
+
+    for anchor in all_anchors:
+        if len(works) >= 30:
+            break
+        try:
+            href = anchor.get_attribute("href") or ""
+            if "product_id" not in href:
+                continue
+            # product_idを抽出
+            pi = href.find("product_id=")
+            if pi == -1:
+                continue
+            pid = href[pi + 11:].split("&")[0]
+            if not pid or pid in seen:
+                continue
+            seen.add(pid)
+
+            # タイトル
+            title = (anchor.get_attribute("title") or anchor.inner_text()).strip()
+            title = " ".join(title.split())
+            if not title or len(title) < 2:
+                continue
+
+            work_url = href if href.startswith("http") else f"https://pokedora.com{href}"
+
+            # 親のliから声優・タグ・画像を取得
+            li = anchor.query_selector("xpath=ancestor::li[1]")
+            voice_actor = ""
+            tags = []
+            thumb_url = ""
+
+            if li:
+                # 声優
+                va_links = li.query_selector_all("a")
+                vas = []
+                for va in va_links:
+                    va_href = va.get_attribute("href") or ""
+                    if "tag_type=1" in va_href:
+                        vt = va.inner_text().strip()
+                        if vt:
+                            vas.append(vt)
+                voice_actor = "、".join(vas)
+
+                # テキスト全体からタグ抽出
+                li_text = li.inner_text()
+                for tc in ["NEW", "配信限定シチュエーション", "シチュエーションCD", "ドラマCD", "割引", "特典あり"]:
+                    if tc in li_text:
+                        tags.append(tc)
+
+                # サムネイル
+                img = li.query_selector("img")
+                if img:
+                    src = img.get_attribute("src") or ""
+                    if src and "nowprinting" not in src:
+                        thumb_url = src if src.startswith("http") else f"https://pokedora.com{src}"
+
+            works.append({
+                "rank":        len(works) + 1,
+                "product_id":  pid,
+                "title":       title,
+                "voice_actor": voice_actor,
+                "tags":        tags,
+                "thumb_url":   thumb_url,
+                "work_url":    work_url,
+                "store":       store,
+            })
+            print(f"    {len(works)}位: {title[:40]}")
+        except Exception as e:
+            print(f"  要素取得エラー: {e}")
+            continue
 
     print(f"  [{store}] {len(works)}件取得")
     return works
+
 
 # ----------------------------------------
 # JSON保存（履歴蓄積）
