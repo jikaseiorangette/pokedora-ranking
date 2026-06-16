@@ -26,65 +26,81 @@ CATEGORIES = {
 # スクレイピング（Playwright JS経由）
 # ----------------------------------------
 
-JS_EXTRACT = (
-    "() => {"
-    "  const results = [];"
-    "  const seen = new Set();"
-    "  const lis = document.querySelectorAll('li');"
-    "  lis.forEach(li => {"
-    "    const links = li.querySelectorAll('a');"
-    "    let detailLink = null;"
-    "    for (const a of links) {"
-    "      const href = a.getAttribute('href') || '';"
-    "      if (href.indexOf('product_id=') !== -1) { detailLink = a; break; }"
-    "    }"
-    "    if (!detailLink) return;"
-    "    const href = detailLink.getAttribute('href') || '';"
-    "    const pidMatch = href.match(/product_id=(\\d+)/);"
-    "    if (!pidMatch) return;"
-    "    const pid = pidMatch[1];"
-    "    if (seen.has(pid)) return;"
-    "    seen.add(pid);"
-    "    const rawTitle = detailLink.getAttribute('title') || detailLink.textContent || '';"
-    "    const title = rawTitle.replace(/\\s+/g, ' ').trim();"
-    "    if (!title || title.length < 2) return;"
-    "    const vaLinks = li.querySelectorAll('a[href*=\"tag_type=1\"]');"
-    "    const vas = Array.from(vaLinks).map(a => a.textContent.trim()).filter(Boolean);"
-    "    const liText = li.textContent || '';"
-    "    const tagList = ['NEW','\u914d\u4fe1\u9650\u5b9a\u30b7\u30c1\u30e5\u30a8\u30fc\u30b7\u30e7\u30f3CD','\u30b7\u30c1\u30e5\u30a8\u30fc\u30b7\u30e7\u30f3CD','\u30c9\u30e9\u30de\u30a2\u30a4\u30c6\u30e0\u30eb','\u5272\u5f15','\u7279\u5178\u3042\u308a'];"
-    "    const tags = tagList.filter(t => liText.indexOf(t) !== -1);"
-    "    const img = li.querySelector('img');"
-    "    let thumb = '';"
-    "    if (img) {"
-    "      const src = img.getAttribute('src') || '';"
-    "      if (src && src.indexOf('nowprinting') === -1) {"
-    "        thumb = src.startsWith('http') ? src : 'https://pokedora.com' + src;"
-    "      }"
-    "    }"
-    "    const workUrl = href.startsWith('http') ? href : 'https://pokedora.com' + href;"
-    "    results.push({"
-    "      product_id: pid, title: title,"
-    "      voice_actor: vas.join('\u3001'),"
-    "      tags: tags, thumb_url: thumb, work_url: workUrl"
-    "    });"
-    "  });"
-    "  return results;"
-    "}"
-)
-
+JS_EXTRACT = """
+() => {
+  var results = [];
+  var seen = {};
+  var lis = document.querySelectorAll('li.top_products_el');
+  if (lis.length === 0) {
+    lis = document.querySelectorAll('li');
+  }
+  for (var i = 0; i < lis.length; i++) {
+    var li = lis[i];
+    var as = li.getElementsByTagName('a');
+    var detailLink = null;
+    for (var j = 0; j < as.length; j++) {
+      var h = as[j].getAttribute('href') || '';
+      if (h.indexOf('product_id') !== -1) {
+        detailLink = as[j];
+        break;
+      }
+    }
+    if (!detailLink) continue;
+    var href = detailLink.getAttribute('href') || '';
+    var pidIdx = href.indexOf('product_id=');
+    if (pidIdx === -1) continue;
+    var pid = href.substring(pidIdx + 11).split('&')[0];
+    if (!pid || seen[pid]) continue;
+    seen[pid] = true;
+    var title = detailLink.getAttribute('title') || detailLink.textContent || '';
+    title = title.replace(/[\t\n\r ]+/g, ' ').trim();
+    if (!title || title.length < 2) continue;
+    var vaLinks = li.querySelectorAll('a');
+    var vas = [];
+    for (var k = 0; k < vaLinks.length; k++) {
+      var vhref = vaLinks[k].getAttribute('href') || '';
+      if (vhref.indexOf('tag_type=1') !== -1) {
+        var vt = vaLinks[k].textContent.trim();
+        if (vt) vas.push(vt);
+      }
+    }
+    var liText = li.textContent || '';
+    var tagList = [
+      'NEW', '\u914d\u4fe1\u9650\u5b9aシチュエーションCD',
+      'シチュエーションCD', 'ドラマCD', '\u5272\u5f15', '\u7279\u5178\u3042\u308a'
+    ];
+    var tags = [];
+    for (var t = 0; t < tagList.length; t++) {
+      if (liText.indexOf(tagList[t]) !== -1) tags.push(tagList[t]);
+    }
+    var img = li.querySelector('img');
+    var thumb = '';
+    if (img) {
+      var src = img.getAttribute('src') || '';
+      if (src && src.indexOf('nowprinting') === -1) {
+        thumb = src.indexOf('http') === 0 ? src : 'https://pokedora.com' + src;
+      }
+    }
+    var workUrl = href.indexOf('http') === 0 ? href : 'https://pokedora.com' + href;
+    results.push({
+      product_id: pid,
+      title: title,
+      voice_actor: vas.join('\u3001'),
+      tags: tags,
+      thumb_url: thumb,
+      work_url: workUrl
+    });
+    if (results.length >= 30) break;
+  }
+  return results;
+}
+"""
 def fetch_ranking(page, store, url):
     print(f"  [{store}] アクセス中: {url}")
     for attempt in range(3):
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=90000)
-            # ランキングliが現れるまで待機
-            try:
-                page.wait_for_function(
-                    "() => document.querySelectorAll('a[href*=\"product_id\"]').length > 0",
-                    timeout=30000
-                )
-            except Exception:
-                pass
+            # ページ描画待機
             time.sleep(3)
             break
         except Exception as e:
@@ -93,18 +109,6 @@ def fetch_ranking(page, store, url):
                 time.sleep(15)
             else:
                 raise
-
-    # デバッグ：liの数と最初のliのHTMLを確認
-    li_count = page.evaluate("() => document.querySelectorAll('li').length")
-    print(f"  [{store}] li要素数: {li_count}")
-    first_li_html = page.evaluate(
-        "() => { const li = document.querySelector('li'); return li ? li.innerHTML.substring(0,300) : 'none'; }"
-    )
-    print(f"  [{store}] 最初のli: {first_li_html}")
-    has_product = page.evaluate(
-        "() => document.querySelectorAll('a[href*=\'product_id\']').length"
-    )
-    print(f"  [{store}] product_idリンク数(JS): {has_product}")
 
     # JavaScriptで直接DOM情報を取得
     items = page.evaluate(JS_EXTRACT)
