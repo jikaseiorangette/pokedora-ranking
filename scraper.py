@@ -94,6 +94,18 @@ def fetch_ranking(page, store, url):
             else:
                 raise
 
+    # デバッグ：liの数と最初のliのHTMLを確認
+    li_count = page.evaluate("() => document.querySelectorAll('li').length")
+    print(f"  [{store}] li要素数: {li_count}")
+    first_li_html = page.evaluate(
+        "() => { const li = document.querySelector('li'); return li ? li.innerHTML.substring(0,300) : 'none'; }"
+    )
+    print(f"  [{store}] 最初のli: {first_li_html}")
+    has_product = page.evaluate(
+        "() => document.querySelectorAll('a[href*="product_id"]').length"
+    )
+    print(f"  [{store}] product_idリンク数(JS): {has_product}")
+
     # JavaScriptで直接DOM情報を取得
     items = page.evaluate(JS_EXTRACT)
     print(f"  [{store}] JS取得件数: {len(items)}")
