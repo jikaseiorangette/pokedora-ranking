@@ -31,6 +31,11 @@ def fetch_ranking(page, store, url):
     for attempt in range(3):
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=90000)
+            # 作品リンクが現れるまで最大30秒待機
+            try:
+                page.wait_for_selector("a[href*='/products/detail.php']", timeout=30000)
+            except Exception:
+                pass
             break
         except Exception as e:
             print(f"  失敗({attempt+1}/3): {e}")
@@ -38,9 +43,14 @@ def fetch_ranking(page, store, url):
                 time.sleep(15)
             else:
                 raise
-    time.sleep(8)
+    time.sleep(5)
 
-    soup = BeautifulSoup(page.content(), "html.parser")
+    # デバッグ：ページのリンク数を確認
+    html = page.content()
+    link_count = html.count('/products/detail.php')
+    print(f"  [{store}] ページ内の作品リンク数: {link_count}")
+
+    soup = BeautifulSoup(html, "html.parser")
     works = []
     seen = set()
 
