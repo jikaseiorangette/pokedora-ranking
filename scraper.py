@@ -50,24 +50,23 @@ def fetch_ranking(page, store, url):
     link_count = html.count('/products/detail.php')
     print(f"  [{store}] ページ内の作品リンク数: {link_count}")
 
-    # デバッグ：HTMLの最初の500文字とproduct_id周辺を出力
-    idx = html.find('product_id=')
-    if idx >= 0:
-        print(f"  [{store}] product_id周辺のHTML: {html[idx-100:idx+200]}")
-    else:
-        print(f"  [{store}] product_idがHTMLに見つからない")
-        print(f"  [{store}] HTML先頭500文字: {html[:500]}")
-
     soup = BeautifulSoup(html, "html.parser")
+
+    # デバッグ：BeautifulSoupでaタグのhrefを直接確認
+    sample_links = soup.find_all("a")
+    for a in sample_links[:5]:
+        print(f"  BS href: {repr(a.get('href', ''))[:80]}")
 
     works = []
     seen = set()
 
-    # 全aタグから正規表現でproduct_idを持つリンクを抽出
-    for link in soup.find_all("a", href=re.compile(r'product_id=\d+')):
+    # hrefにdetail.phpを含む全aタグを取得
+    for link in soup.find_all("a"):
         if len(works) >= 30:
             break
-        href = link.get("href", "")
+        href = link.get("href", "") or ""
+        if "product_id" not in href and "detail.php" not in href:
+            continue
         m = re.search(r'product_id=(\d+)', href)
         if not m:
             continue
