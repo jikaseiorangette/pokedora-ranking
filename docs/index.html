@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ポケドラ ランキング分析</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500&family=Noto+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{
+    --rose-50:#fff1f4;--rose-100:#fde0e7;--rose-600:#d4386f;
+    --rose-800:#8b1a42;--mauve-50:#fdf4f8;
+    --text-main:#3a1628;--text-sub:#8b4f6a;--text-muted:#b8829a;
+    --border:#f0c4d8;--border-light:#fae0ec;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans JP',sans-serif;background:var(--rose-50);color:var(--text-main);min-height:100vh}
+.site-wrap{max-width:1200px;margin:0 auto;padding:20px 16px 60px}
+.header{display:flex;align-items:center;gap:14px;padding:16px 24px;background:#fff;border:0.5px solid var(--border);border-radius:16px;margin-bottom:20px}
+.header-icon{width:38px;height:38px;border-radius:50%;background:var(--rose-100);display:flex;align-items:center;justify-content:center;font-size:18px}
+.header-title{font-family:'Noto Serif JP',serif;font-size:18px;font-weight:500;color:var(--rose-800);letter-spacing:.04em}
+.header-sub{font-size:12px;font-weight:500;color:var(--rose-600);margin-top:3px;letter-spacing:.02em;border-left:2.5px solid var(--rose-600);padding-left:7px}
+.header-update{margin-left:auto;font-size:11px;color:var(--rose-600);background:var(--rose-50);border:0.5px solid var(--border);border-radius:20px;padding:5px 12px;white-space:nowrap}
+.stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}
+.stat-card{background:#fff;border:0.5px solid var(--border);border-radius:14px;padding:14px 16px}
+.stat-label{font-size:11px;color:var(--text-muted);margin-bottom:6px}
+.stat-value{font-family:'Noto Serif JP',serif;font-size:26px;font-weight:500;color:var(--rose-800)}
+.stat-sub{font-size:10px;color:var(--text-muted);margin-top:3px}
+.section{margin-bottom:28px}
+.section-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.section-title{font-family:'Noto Serif JP',serif;font-size:15px;font-weight:500;color:var(--rose-800)}
+.section-badge{font-size:10px;background:var(--rose-100);color:var(--rose-600);border:0.5px solid var(--border);border-radius:20px;padding:2px 9px}
+.section-badge-new{font-size:10px;background:#ecfdf5;color:#065f46;border:0.5px solid #6ee7b7;border-radius:20px;padding:2px 9px}
+.table-card{background:#fff;border:0.5px solid var(--border);border-radius:16px;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
+thead th{background:var(--mauve-50);color:var(--rose-800);font-weight:500;padding:10px 8px;border-bottom:0.5px solid var(--border-light);text-align:left;font-size:11px}
+tbody td{padding:6px 8px;border-bottom:0.5px solid var(--border-light);vertical-align:top}
+tbody td.thumb-wrap{vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--rose-50)}
+.rb{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;font-size:11px;font-weight:500}
+.r1{background:#fef3c7;color:#92400e;border:0.5px solid #fde68a}
+.r2{background:#f1f5f9;color:#475569;border:0.5px solid #e2e8f0}
+.r3{background:#fef0e6;color:#9a3412;border:0.5px solid #fed7aa}
+.rn{background:var(--rose-50);color:var(--text-muted);border:0.5px solid var(--border-light)}
+.thumb-wrap{width:150px;min-width:150px;padding:4px 6px 4px 8px;position:relative}
+.thumb-wrap img{width:146px;height:110px;object-fit:cover;border-radius:8px;border:0.5px solid var(--border-light);display:block}
+.thumb-wrap a{display:block}
+.thumb-rank{position:absolute;top:7px;left:11px;z-index:1}
+.title-cell{padding-left:8px !important}
+.work-title{font-weight:500;color:var(--rose-800);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.work-title a{color:var(--rose-800);text-decoration:none}
+.work-title a:hover{color:var(--rose-600);text-decoration:underline}
+.work-circle{font-size:10px;color:var(--text-muted);margin-top:2px}
+.genres{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
+.gtag{display:inline-block;font-size:9px;background:var(--rose-50);color:var(--text-muted);border:0.5px solid var(--border-light);border-radius:20px;padding:1px 6px;white-space:nowrap}
+.rise-pill{display:inline-flex;align-items:center;gap:2px;background:var(--rose-50);color:var(--rose-600);border:0.5px solid var(--border);border-radius:20px;padding:3px 8px;font-size:11px;font-weight:500}
+.tup{font-size:11px;font-weight:500;color:#be123c}
+.tdn{font-size:11px;font-weight:500;color:#0369a1}
+.tsm{font-size:11px;color:var(--text-muted)}
+.tnew{display:inline-flex;align-items:center;gap:2px;background:#ecfdf5;color:#065f46;border:0.5px solid #6ee7b7;border-radius:20px;padding:2px 7px;font-size:10px;font-weight:500}
+.chart-cell{width:240px}
+.chart-wrap{width:100%;height:80px;cursor:pointer}
+.no-data{font-size:11px;color:var(--text-muted)}
+.empty-msg{text-align:center;padding:20px;color:var(--text-muted);font-size:12px}
+.footer{text-align:center;margin-top:40px;font-size:11px;color:var(--text-muted);padding-top:20px;border-top:0.5px solid var(--border-light)}
+@media (max-width:640px){
+    .site-wrap{padding:10px 8px 40px}
+    .header{padding:10px 12px;gap:8px;flex-wrap:wrap}
+    .header-title{font-size:13px}
+    .header-sub{font-size:10px}
+    .header-update{font-size:9px;padding:3px 8px;margin-left:0;width:100%}
+    .stat-row{grid-template-columns:repeat(3,1fr);gap:5px}
+    .stat-card{padding:8px 6px}
+    .stat-value{font-size:18px}
+    .stat-label{font-size:8px}
+    .stat-sub{font-size:7px}
+    .table-card{overflow:visible}
+    table{display:block}
+    thead{display:none}
+    tbody{display:flex;flex-direction:column;gap:6px;padding:6px}
+    tbody tr{display:grid;grid-template-columns:110px 1fr;grid-template-rows:auto auto auto;background:#fff;border:0.5px solid var(--border);border-radius:10px;overflow:hidden;padding:0}
+    tbody td{border-bottom:none;padding:0;width:auto !important}
+    tbody tr:hover td{background:transparent}
+    .thumb-wrap{grid-column:1;grid-row:1/4;width:110px !important;min-width:110px;padding:6px 4px 6px 6px;position:relative}
+    .thumb-wrap img{width:100px;height:75px;border-radius:6px;border:0.5px solid var(--border-light);display:block;object-fit:cover}
+    .thumb-rank{top:9px;left:9px}
+    .title-cell{grid-column:2;grid-row:1;padding:6px 8px 2px 4px !important;display:block}
+    .work-title{font-size:11px;white-space:normal;line-height:1.3}
+    .work-circle{font-size:9px;margin-top:1px}
+    .genres{margin-top:3px;gap:2px}
+    .gtag{font-size:8px;padding:1px 4px}
+    .chart-cell{grid-column:1/3;grid-row:4;width:100% !important}
+    .chart-wrap{height:72px;padding:0 4px 6px;display:block}
+    .section-title{font-size:13px}
+    .section-badge,.section-badge-new{font-size:9px}
+    .section{margin-bottom:20px}
+    .section-head{margin-bottom:6px}
+}
+</style>
+</head>
+<body>
+<div class="site-wrap">
+
+<div class="header">
+    <div class="header-icon">🎧</div>
+    <div>
+        <div class="header-title">ポケドラ ランキング分析</div>
+        <div class="header-sub">ドラマCD人気作品データ</div>
+    </div>
+    <div class="header-update">🔄 毎日23:30頃更新 ／ 2026/06/17</div>
+</div>
+
+<div class="stat-row">
+    <div class="stat-card">
+        <div class="stat-label">📦 収録作品数</div>
+        <div class="stat-value">30</div>
+        <div class="stat-sub">オトナ向けランキング</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">✨ 新着</div>
+        <div class="stat-value">30</div>
+        <div class="stat-sub">2026/06/17</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">📈 急上昇作品</div>
+        <div class="stat-value">0</div>
+        <div class="stat-sub">前日比10位以上上昇</div>
+    </div>
+</div>
+
+
+
+<div class="section">
+    <div class="section-head">
+        <span style="font-size:16px">🏆</span>
+        <span class="section-title">本日のランキング</span>
+        <span class="section-badge">TOP 10</span>
+    </div>
+    <div class="table-card">
+    <table>
+        <colgroup>
+            <col style="width:150px">
+            <col style="width:auto">
+            <col style="width:10%">
+            <col style="width:7%">
+            <col style="width:28%">
+        </colgroup>
+        <thead>
+            <tr><th></th><th>タイトル / 声優</th><th>声優</th><th>推移</th><th class="chart-cell">推移グラフ（30日）</th></tr>
+        </thead>
+        <tbody>
+        <tr>
+            <td class="thumb-wrap">
+                <span class="thumb-rank"><span class="rb r1">1</span></span>
+                <a href="https://pokedora.com/products/detail.php?product_id=147241" target="_blank" rel="noopener"><img src="https://pokedora.com/get_image.php?product_id=147241" alt="" loading="lazy"></a>
+            </td>
+            <td class="title-cell">
+                <div class="work-title"><a href="https://pokedora.com/products/detail.php?product_id=147241" target="_blank" rel="noopener">【急募】ワケあり旅館バイト。 恐怖を快感で塗り潰して…甘々寸止め愛撫→我慢の限界・本気ピストン【隠れ元ヤクザ/甘S/連続絶頂】【出演声優：初時チェリー】</a></div>
+                <div class="work-circle">初時チェリー</div>
+                <div class="genres"><span class="gtag">NEW</span><span class="gtag">配信限定シチュエーション</span><span class="gtag">割引</span><span class="gtag">特典あり</span></div>
+            </td>
+            <td style="font-size:11px;color:var(--text-sub)">初時チェリー</td>
+            <td><span class="tnew">🆕 新着</span></td>
+            <td class="chart-cell"><canvas id="wc_1" class="chart-wrap" data-pid="147241"></canvas></td>
+        </tr>
+        <tr>
+            <td class="thumb-wrap">
+                <span class="thumb-rank"><span class="rb r2">2</span></span>
+                <a href="https://pokedora.com/products/detail.php?product_id=146767" target="_blank" rel="noopener"><img src="https://pokedora.com/get_image.php?product_id=146767" alt="" loading="lazy"></a>
+            </td>
+            <td class="title-cell">
+                <div class="work-title"><a href="https://pokedora.com/products/detail.php?product_id=146767" target="_blank" rel="noopener">《配信開始は2026年6月24日0:00》とにかくちゅーがしたいキョウスケさん【出演声優：土門熱】</a></div>
+                <div class="work-circle">土門熱</div>
+                <div class="genres"><span class="gtag">シチュエーションCD</span><span class="gtag">特典あり</span></div>
+            </td>
+            <td style="font-size:11px;color:var(--text-sub)">土門熱</td>
+            <td><span class="tnew">🆕 新着</span></td>
+            <td class="chart-cell"><canvas id="wc_2" class="chart-wrap" data-pid="146767"></canvas></td>
+        </tr>
+        <tr>
+            <td class="thumb-wrap">
+                <span class="thumb-rank"><span class="rb r3">3</span></span>
+                <a href="https://pokedora.com/products/detail.php?product_id=116723" target="_blank" rel="noopener"><img src="https://pokedora.com/get_image.php?product_id=116723" alt="" loading="lazy"></a>
+            </td>
+            <td class="title-cell">
+                <div class="work-title"><a href="https://pokedora.com/products/detail.php?product_id=116723" target="_blank" rel="noopener">ポリス旦那さま-爆発物処理班・三葉修志-【出演声優：テトラポット登】</a></div>
+                <div class="work-circle">テトラポット登</div>
+                <div class="genres"><span class="gtag">シチュエーションCD</span><span class="gtag">割引</span><span class="gtag">特典あり</span></div>
+            </td>
+            <td style="font-size:11px;color:var(--text-sub)">テトラポット登</td>
+            <td><span class="tnew">🆕 新着</span></td>
+            <td class="chart-cell"><canvas id="wc_3" class="chart-wrap" data-pid="116723"></canvas></td>
+        </tr>
+        <tr>
+            <td class="thumb-wrap">
+                <span class="thumb-rank"><span class="rb rn">4</span></span>
+                <a href="https://pokedora.com/products/detail.php?product_id=148014" target="_blank" rel="noopener"><img src="https://pokedora.com/get_image.php?product_id=148014&thumb=medium" alt="" loading="lazy"></a>
+            </td>
+            <td class="title-cell">
+                <div class="work-title"><a href="https://pokedora.com/products/detail.php?product_id=148014" target="_blank" rel="noopener">暴漢から助けてくれたお兄さんにエロ願望を見抜かれて〇教されていますｖ【出演声優：主水Ash】</a></div>
+                <div class="work-circle">主水Ash</div>
+                <div class="genres"><span class="gtag">NEW</span><span class="gtag">配信限定シチュエーション</span><span class="gtag">割引</span></div>
+            </td>
+            <td style="font-size:11px;color:var(--text-sub)">主水Ash</td>
+            <td><span class="tnew">🆕 新着</span></td>
+            <td class="chart-cell"><canvas id="wc_4" class="chart-wrap" data-pid="148014"></canvas></td>
+        </tr>
+        <tr>
+            <td class="thumb-wrap">
+                <span class="thumb-rank"><span class="rb rn">5</span></span>
+                <a href="https://pokedora.com/products/detail.php?product_id=146592" target="_blank" rel="noopener"><img src="https://pokedora.com/get_image.php?product_id=146592&thumb=medium" alt="" loading="lazy"></a>
+            </td>
+            <td class="title-cell">
+                <div class="work-title"><a href="https://pokedora.com/products/detail.php?product_id=146592" target="_blank" rel="noopener">それはささやかな恋のはじまり 綿矢翔真【出演声優：彩和矢】</a></div>
+                <div class="work-circle">彩和矢</div>
+                <div class="genres"><span class="gtag">NEW</span><span class="gtag">配信限定シチュエーション</span><span class="gtag">特典あり</span></div>
+            </td>
+            <td style="font-size:11px;color:var(--text-sub)">彩和矢</td>
+            <td><span class="tnew">🆕 新着</span></td>
+            <td class="chart-cell"><canvas id="wc_5" class="chart-wrap" data-pid="146592"></canvas></td>
+        </tr>
+        <tr>
+            <td class="thumb-wrap">
+                <span class="thumb-rank"><span class="rb rn">6</span></span>
+                <a href="https://pokedora.com/products/detail.php?product_id=146562" target="_blank" rel="noopener"><img src="https://pokedora.com/get_image.php?product_id=146562&thumb=medium" alt="" loading="lazy"></a>
+            </td>
+            <td class="title-cell">
+                <div class="work-title"><a href="https://pokedora.com/products/detail.php?product_id=146562" target="_blank" rel="noopener">森のクマさんは繁殖期。～包容力たっぷりな大型ケモノの獣欲解放新婚えっち【最大7連続絶頂×種付けプレス】【出演声優：二回戦中】</a></div>
+                <div class="work-circle">二回戦中</div>
+                <div class="genres"><span class="gtag">配信限定シチュエーション</span><span class="gtag">特典あり</span></div>
+            </td>
+            <td style="font-size:11px;color:var(--text-sub)">二回戦中</td>
+            <td><span class="tnew">🆕 新着</span></td>
+            <td class="chart-cell"><canvas id="wc_6" class="chart-wrap" data-pid="146562"></canvas></td>
+        </tr>
+        <tr>
+            <td class="thumb-wrap">
+                <span class="thumb-rank"><span class="rb rn">7</span></span>
+                <a href="https://pokedora.com/products/detail.php?product_id=144278" target="_blank" rel="noopener"><div style="width:146px;height:110px;border-radius:8px;background:var(--rose-100);display:flex;align-items:center;justify-content:center;font-size:28px">🎧</div></a>
+            </td>
+            <td class="title-cell">
+                <div class="work-title"><a href="https://pokedora.com/products/detail.php?product_id=144278" target="_blank" rel="noopener">とにかくちゅーがしたいシュウトさん【出演声優：猿飛総司】</a></div>
+                <div class="work-circle">猿飛総司</div>
+                <div class="genres"><span class="gtag">シチュエーションCD</span><span class="gtag">特典あり</span></div>
+            </td>
+            <td style="font-size:11px;color:var(--text-sub)">猿飛総司</td>
+            <td><span class="tnew">🆕 新着</span></td>
+            <td class="chart-cell"><canvas id="wc_7" class="chart-wrap" data-pid="144278"></canvas></td>
+        </tr>
+        <tr>
+            <td class="thumb-wrap">
+                <span class="thumb-rank"><span class="rb rn">8</span></span>
+                <a href="https://pokedora.com/products/detail.php?product_id=147451" target="_blank" rel="noopener"><div style="width:146px;height:110px;border-radius:8px;background:var(--rose-100);display:flex;align-items:center;justify-content:center;font-size:28px">🎧</div></a>
+            </td>
+            <td class="title-cell">
+                <div class="work-title"><a href="https://pokedora.com/products/detail.php?product_id=147451" target="_blank" rel="noopener">おとなり以上、恋人未満 ～激メロ営業部長・城の寵愛～【出演声優：茶介】</a></div>
+                <div class="work-circle">茶介</div>
+                <div class="genres"><span class="gtag">配信限定シチュエーション</span><span class="gtag">特典あり</span></div>
+            </td>
+            <td style="font-size:11px;color:var(--text-sub)">茶介</td>
+            <td><span class="tnew">🆕 新着</span></td>
+            <td class="chart-cell"><canvas id="wc_8" class="chart-wrap" data-pid="147451"></canvas></td>
+        </tr>
+        <tr>
+            <td class="thumb-wrap">
+                <span class="thumb-rank"><span class="rb rn">9</span></span>
+                <a href="https://pokedora.com/products/detail.php?product_id=147183" target="_blank" rel="noopener"><div style="width:146px;height:110px;border-radius:8px;background:var(--rose-100);display:flex;align-items:center;justify-content:center;font-size:28px">🎧</div></a>
+            </td>
+            <td class="title-cell">
+                <div class="work-title"><a href="https://pokedora.com/products/detail.php?product_id=147183" target="_blank" rel="noopener">【※性欲堕ち不可避※】ダウナー審問官のドスケベ断罪〇教SEX～ねっとり執着おマンコ責めでグチャトロ快楽堕ち【出演声優：三橋渡】</a></div>
+                <div class="work-circle">三橋渡</div>
+                <div class="genres"><span class="gtag">配信限定シチュエーション</span><span class="gtag">特典あり</span></div>
+            </td>
+            <td style="font-size:11px;color:var(--text-sub)">三橋渡</td>
+            <td><span class="tnew">🆕 新着</span></td>
+            <td class="chart-cell"><canvas id="wc_9" class="chart-wrap" data-pid="147183"></canvas></td>
+        </tr>
+        <tr>
+            <td class="thumb-wrap">
+                <span class="thumb-rank"><span class="rb rn">10</span></span>
+                <a href="https://pokedora.com/products/detail.php?product_id=147160" target="_blank" rel="noopener"><div style="width:146px;height:110px;border-radius:8px;background:var(--rose-100);display:flex;align-items:center;justify-content:center;font-size:28px">🎧</div></a>
+            </td>
+            <td class="title-cell">
+                <div class="work-title"><a href="https://pokedora.com/products/detail.php?product_id=147160" target="_blank" rel="noopener">深夜残業シリーズ OMNIBUS STORY 『藤木礼央 ～おはようからおやすみまで～』【出演声優：土門熱】</a></div>
+                <div class="work-circle">土門熱</div>
+                <div class="genres"><span class="gtag">配信限定シチュエーション</span><span class="gtag">特典あり</span></div>
+            </td>
+            <td style="font-size:11px;color:var(--text-sub)">土門熱</td>
+            <td><span class="tnew">🆕 新着</span></td>
+            <td class="chart-cell"><canvas id="wc_10" class="chart-wrap" data-pid="147160"></canvas></td>
+        </tr>
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<div class="footer">
+    ポケドラ ランキング分析 ／ データは毎日23:30頃に自動更新されます<br>
+    ※ 本サイトはポケットドラマCD（ポケドラ）のデータを使用しています
+</div>
+
+</div>
+<script>
+const graphData = {"147241": {"labels": ["2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17"], "ranks": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 1]}, "146767": {"labels": ["2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17"], "ranks": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 2]}, "116723": {"labels": ["2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17"], "ranks": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 3]}, "148014": {"labels": ["2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17"], "ranks": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 4]}, "146592": {"labels": ["2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17"], "ranks": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 5]}, "146562": {"labels": ["2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17"], "ranks": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 6]}, "144278": {"labels": ["2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17"], "ranks": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 7]}, "147451": {"labels": ["2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17"], "ranks": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 8]}, "147183": {"labels": ["2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17"], "ranks": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 9]}, "147160": {"labels": ["2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17"], "ranks": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 10]}};
+const PINK = '#e8528a';
+
+function drawChart(canvasId, pid) {
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+    const d = graphData[pid];
+    if (!d) { ctx.parentElement.innerHTML = '<span class="no-data">データ蓄積中</span>'; return; }
+    const disp = d.ranks.map(v => (v === null || v === undefined) ? null : (v > 14 ? 15 : v));
+    const isSingle = d.ranks.filter(v => v !== null).length === 1;
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: d.labels,
+            datasets: [{
+                data: disp,
+                borderColor: PINK,
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                pointRadius: isSingle ? 5 : 2,
+                pointHoverRadius: 6,
+                pointBackgroundColor: PINK,
+                fill: false,
+                tension: 0.4,
+                spanGaps: false,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: { padding: { top: 6, left: 2 } },
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                y: {
+                    reverse: true, min: -1, max: 17,
+                    ticks: {
+                        font: { size: 11 }, color: '#b8829a',
+                        callback: v => v===1?'1位':v===5?'5位':v===10?'10位':v===15?'圏外':null
+                    },
+                    beforeFit: axis => {
+                        axis.ticks = [{value:1,label:'1位'},{value:5,label:'5位'},{value:10,label:'10位'},{value:15,label:'圏外'}];
+                    },
+                    grid: { color: 'rgba(232,82,138,0.07)' },
+                    border: { display: false }
+                },
+                x: {
+                    ticks: { font: { size: 9 }, color: '#b8829a', maxTicksLimit: 4 },
+                    grid: { display: false }, border: { display: false }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: c => {
+                            const raw = d.ranks[c.dataIndex];
+                            if (raw === null || raw === undefined) return '';
+                            return raw > 30 ? '圏外' : raw + '位';
+                        }
+                    },
+                    titleFont: { size: 11 }, bodyFont: { size: 12 }, padding: 8,
+                    backgroundColor: 'rgba(139,26,66,0.85)',
+                    titleColor: '#fde0e7', bodyColor: '#fff',
+                }
+            }
+        }
+    });
+}
+
+document.querySelectorAll('canvas[data-pid]').forEach(c => drawChart(c.id, c.dataset.pid));
+</script>
+</body>
+</html>
