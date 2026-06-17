@@ -164,7 +164,7 @@ def fetch_ranking(page, store, url):
 # JSON保存（履歴蓄積）
 # ----------------------------------------
 
-DATA_DIR = Path("data")
+DATA_DIR = Path("docs/data")
 
 def load_history():
     path = DATA_DIR / "history.json"
