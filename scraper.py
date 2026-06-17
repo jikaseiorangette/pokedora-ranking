@@ -3,6 +3,7 @@
 
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
+import csv
 import json
 import os
 import re
@@ -14,6 +15,10 @@ JST = timezone(timedelta(hours=9))
 
 def now_jst():
     return datetime.now(JST)
+
+# 発売予定データのCSVパス（他の仕組みで取得・更新される想定）
+# 必須カラム: product_id, title, voice_actor, circle, release_date, stream_date, tags, thumb_url, work_url, status
+PRODUCTS_CSV = Path("data/products.csv")
 
 CATEGORIES = {
     "adt":    ("オトナ向け", "https://pokedora.com/ranking/index.php?store=adt&term=1&age_check=1"),
@@ -206,6 +211,56 @@ def build_graph_data(history, store, product_ids, today):
     return graph
 
 # ----------------------------------------
+# 近日配信予定（外部CSVから読み込み）
+# ----------------------------------------
+
+def load_preorders(today_str, limit=2):
+    """
+    data/products.csv から「販売ステータス=PREORDER」かつ発売日が今日以降の
+    作品を発売日の近い順に抽出する。CSVは他の仕組みで取得・更新される想定。
+
+    必須カラム:
+      product_id, title, voice_actor, circle, release_date, stream_date,
+      tags, thumb_url, work_url, status
+    tags は "/" 区切りの文字列。
+    """
+    if not PRODUCTS_CSV.exists():
+        print(f"  [preorder] {PRODUCTS_CSV} が見つからないためスキップ")
+        return []
+
+    preorders = []
+    try:
+        with open(PRODUCTS_CSV, encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                status = (row.get("status") or "").strip().upper()
+                if status != "PREORDER":
+                    continue
+                release_date = (row.get("release_date") or "").strip()[:10]
+                if not release_date or release_date < today_str:
+                    continue
+                tags_raw = row.get("tags") or ""
+                tags = [t.strip() for t in tags_raw.split("/") if t.strip()]
+                preorders.append({
+                    "product_id":   row.get("product_id", "").strip(),
+                    "title":        (row.get("title") or "").strip(),
+                    "voice_actor":  (row.get("voice_actor") or "").strip(),
+                    "circle":       (row.get("circle") or "").strip(),
+                    "release_date": release_date,
+                    "stream_date":  (row.get("stream_date") or "").strip()[:10],
+                    "tags":         tags[:6],
+                    "thumb_url":    (row.get("thumb_url") or "").strip(),
+                    "work_url":     (row.get("work_url") or "").strip(),
+                })
+    except Exception as e:
+        print(f"  [preorder] CSV読み込みエラー: {e}")
+        return []
+
+    preorders.sort(key=lambda x: x["release_date"])
+    print(f"  [preorder] 近日配信予定: {len(preorders)}件 中 上位{limit}件を表示")
+    return preorders[:limit]
+
+# ----------------------------------------
 # 静的HTML生成
 # ----------------------------------------
 
@@ -263,6 +318,9 @@ tbody tr:hover td{background:var(--rose-50)}
 .work-title a{color:var(--rose-800);text-decoration:none}
 .work-title a:hover{color:var(--rose-600);text-decoration:underline}
 .work-circle{font-size:10px;color:var(--text-muted);margin-top:2px}
+.work-date{display:inline-block;margin-right:6px;color:var(--rose-600)}
+.release-date-cell{font-size:12px;color:var(--rose-800);font-weight:500}
+.bonus-badge{font-size:10px;background:#ecfdf5;color:#065f46;border:0.5px solid #6ee7b7;border-radius:20px;padding:2px 9px;margin-left:6px}
 .genres{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
 .gtag{display:inline-block;font-size:9px;background:var(--rose-50);color:var(--text-muted);border:0.5px solid var(--border-light);border-radius:20px;padding:1px 6px;white-space:nowrap}
 .rise-pill{display:inline-flex;align-items:center;gap:2px;background:var(--rose-50);color:var(--rose-600);border:0.5px solid var(--border);border-radius:20px;padding:3px 8px;font-size:11px;font-weight:500}
@@ -339,6 +397,8 @@ tbody tr:hover td{background:var(--rose-50)}
         <div class="stat-sub">前日比10位以上上昇</div>
     </div>
 </div>
+
+@@PREORDER_SECTION@@
 
 @@RISING_SECTION@@
 
@@ -512,7 +572,33 @@ def make_rising_row(w, rise, canvas_id):
             <td class="chart-cell"><canvas id="{canvas_id}" class="chart-wrap" data-pid="{w['product_id']}"></canvas></td>
         </tr>"""
 
-def generate_html(ranking, rising, graph_data, today_str, total_works, new_today):
+def make_preorder_row(p, index):
+    rb = rank_badge(index + 1)
+    if p.get("thumb_url"):
+        th = f'<img src="{p["thumb_url"]}" alt="" loading="lazy">'
+    else:
+        th = '<div style="width:146px;height:110px;border-radius:8px;background:var(--rose-100);display:flex;align-items:center;justify-content:center;font-size:28px">🎧</div>'
+    tg = tags_html(p.get("tags", []))
+    work_url = p.get("work_url") or "#"
+    stream_date_html = (
+        f'<span class="work-date">配信開始: {p["stream_date"]}</span>'
+        if p.get("stream_date") else ""
+    )
+    return f"""        <tr>
+            <td class="thumb-wrap">
+                <span class="thumb-rank">{rb}</span>
+                <a href="{work_url}" target="_blank" rel="noopener">{th}</a>
+            </td>
+            <td class="title-cell">
+                <div class="work-title"><a href="{work_url}" target="_blank" rel="noopener">{p['title']}</a></div>
+                <div class="work-circle">{stream_date_html}{p.get('circle','')}</div>
+                {tg}
+            </td>
+            <td style="font-size:11px;color:var(--text-sub)">{p.get('voice_actor','')}</td>
+            <td class="release-date-cell">{p.get('release_date','')}</td>
+        </tr>"""
+
+def generate_html(ranking, rising, preorders, graph_data, today_str, total_works, new_today):
     top10 = ranking[:10]
     today_dt = datetime.strptime(today_str.replace("/", "-"), "%Y-%m-%d")
     prev_date = (today_dt - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -560,11 +646,38 @@ def generate_html(ranking, rising, graph_data, today_str, total_works, new_today
     else:
         rising_section = ""
 
+    if preorders:
+        prows = [make_preorder_row(p, i) for i, p in enumerate(preorders)]
+        preorder_section = f"""<div class="section">
+    <div class="section-head">
+        <span style="font-size:16px">🔔</span>
+        <span class="section-title">近日配信予定</span>
+        <span class="section-badge">データあり・配信開始前</span>
+    </div>
+    <div class="table-card">
+    <table>
+        <colgroup>
+            <col style="width:150px"><col style="width:auto">
+            <col style="width:10%"><col style="width:12%">
+        </colgroup>
+        <thead>
+            <tr><th></th><th>タイトル / 声優</th><th>声優</th><th>発売予定日</th></tr>
+        </thead>
+        <tbody>
+{"".join(prows)}
+        </tbody>
+    </table>
+    </div>
+</div>"""
+    else:
+        preorder_section = ""
+
     html = HTML_TEMPLATE
     html = html.replace("@@TODAY_STR@@", today_str)
     html = html.replace("@@TOTAL_WORKS@@", str(total_works))
     html = html.replace("@@NEW_TODAY@@", str(new_today))
     html = html.replace("@@RISING_COUNT@@", str(len(rising)))
+    html = html.replace("@@PREORDER_SECTION@@", preorder_section)
     html = html.replace("@@RISING_SECTION@@", rising_section)
     html = html.replace("@@RANKING_ROWS@@", "\n".join(ranking_rows))
     html = html.replace("@@GRAPH_DATA_JSON@@", json.dumps(graph_data, ensure_ascii=False))
@@ -634,7 +747,9 @@ def run():
     total_works = len(works)
     new_today = sum(1 for w in works if w["product_id"] not in prev_data)
 
-    html = generate_html(works, rising, graph_data, today_str, total_works, new_today)
+    preorders = load_preorders(today)
+
+    html = generate_html(works, rising, preorders, graph_data, today_str, total_works, new_today)
 
     docs_dir = Path("docs")
     docs_dir.mkdir(exist_ok=True)
