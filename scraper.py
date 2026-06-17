@@ -57,6 +57,7 @@ def fetch_ranking(page, store, url):
 
     works = []
     seen = set()
+    debug_count = 0
 
     for anchor in all_anchors:
         if len(works) >= 30:
@@ -75,7 +76,12 @@ def fetch_ranking(page, store, url):
             seen.add(pid)
 
             # タイトル
-            title = (anchor.get_attribute("title") or anchor.inner_text()).strip()
+            raw_title_attr = anchor.get_attribute("title")
+            raw_inner_text = anchor.inner_text()
+            if debug_count < 5:
+                print(f"  DEBUG pid={pid} title_attr={repr(raw_title_attr)[:50]} inner_text={repr(raw_inner_text)[:50]}")
+                debug_count += 1
+            title = (raw_title_attr or raw_inner_text).strip()
             title = " ".join(title.split())
             if not title or len(title) < 2:
                 continue
