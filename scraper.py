@@ -111,12 +111,30 @@ def fetch_ranking(page, store, url):
                     if tc in li_text:
                         tags.append(tc)
 
-                # サムネイル
+                # サムネイル（遅延読み込み対応：data-originalを優先）
                 img = li.query_selector("img")
                 if img:
-                    src = img.get_attribute("src") or ""
+                    src = (
+                        img.get_attribute("data-original")
+                        or img.get_attribute("data-src")
+                        or img.get_attribute("src")
+                        or ""
+                    )
                     if src and "nowprinting" not in src:
                         thumb_url = src if src.startswith("http") else f"https://pokedora.com{src}"
+
+            # フォールバック：liが見つからない、または画像が取れない場合はanchor自身のimgを使う
+            if not thumb_url:
+                img2 = anchor.query_selector("img")
+                if img2:
+                    src2 = (
+                        img2.get_attribute("data-original")
+                        or img2.get_attribute("data-src")
+                        or img2.get_attribute("src")
+                        or ""
+                    )
+                    if src2 and "nowprinting" not in src2:
+                        thumb_url = src2 if src2.startswith("http") else f"https://pokedora.com{src2}"
 
             works.append({
                 "rank":        len(works) + 1,
