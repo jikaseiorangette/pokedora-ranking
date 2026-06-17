@@ -79,12 +79,19 @@ def fetch_ranking(page, store, url):
             raw_title_attr = anchor.get_attribute("title")
             raw_inner_text = anchor.inner_text()
             if debug_count < 5:
-                print(f"  DEBUG pid={pid} title_attr={repr(raw_title_attr)[:50]} inner_text={repr(raw_inner_text)[:50]}")
+                outer_html = anchor.evaluate("el => el.outerHTML")
+                print(f"  DEBUG pid={pid} outerHTML={outer_html[:300]}")
                 debug_count += 1
             title = (raw_title_attr or raw_inner_text).strip()
             title = " ".join(title.split())
             if not title or len(title) < 2:
-                continue
+                # フォールバック: 画像のalt属性をタイトルとして使う
+                img_el = anchor.query_selector("img")
+                if img_el:
+                    alt = img_el.get_attribute("alt") or ""
+                    title = " ".join(alt.split())
+                if not title or len(title) < 2:
+                    continue
 
             work_url = href if href.startswith("http") else f"https://pokedora.com{href}"
 
