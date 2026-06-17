@@ -47,6 +47,11 @@ def fetch_ranking(page, store, url):
     all_anchors = page.query_selector_all("a")
     print(f"  [{store}] aタグ数: {len(all_anchors)}")
 
+    # デバッグ：最初の20件のhrefを出力
+    for i, a in enumerate(all_anchors[:20]):
+        h = a.get_attribute("href")
+        print(f"  href[{i}]: {repr(h)[:60]}")
+
     for anchor in all_anchors:
         if len(works) >= 30:
             break
