@@ -31,7 +31,13 @@ def fetch_ranking(page, store, url):
     for attempt in range(3):
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=90000)
-            time.sleep(8)
+            # ページを下にスクロールしてランキングを強制描画
+            page.evaluate("window.scrollTo(0, 300)")
+            time.sleep(3)
+            page.evaluate("window.scrollTo(0, 600)")
+            time.sleep(3)
+            page.evaluate("window.scrollTo(0, 0)")
+            time.sleep(5)
             break
         except Exception as e:
             print(f"  失敗({attempt+1}/3): {e}")
@@ -40,24 +46,21 @@ def fetch_ranking(page, store, url):
             else:
                 raise
 
-    works = []
-    seen = set()
+    # product_idを含むリンクを直接取得
+    all_anchors = page.query_selector_all("a[href*='product_id']")
+    print(f"  [{store}] product_idリンク数: {len(all_anchors)}")
 
-    # Playwright APIで直接全aタグを取得
-    all_anchors = page.query_selector_all("a")
-    print(f"  [{store}] aタグ数: {len(all_anchors)}")
-
-    # デバッグ：最初の20件のhrefを出力
-    for i, a in enumerate(all_anchors[:20]):
-        h = a.get_attribute("href")
-        print(f"  href[{i}]: {repr(h)[:60]}")
+    # 0件なら全aタグでフォールバック
+    if not all_anchors:
+        all_anchors = page.query_selector_all("a")
+        print(f"  [{store}] フォールバック: aタグ数: {len(all_anchors)}")
 
     for anchor in all_anchors:
         if len(works) >= 30:
             break
         try:
             href = anchor.get_attribute("href") or ""
-            if "product_id" not in href:
+            if not href:
                 continue
             # product_idを抽出
             pi = href.find("product_id=")
