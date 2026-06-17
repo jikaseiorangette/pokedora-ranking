@@ -55,6 +55,9 @@ def fetch_ranking(page, store, url):
         all_anchors = page.query_selector_all("a")
         print(f"  [{store}] フォールバック: aタグ数: {len(all_anchors)}")
 
+    works = []
+    seen = set()
+
     for anchor in all_anchors:
         if len(works) >= 30:
             break
