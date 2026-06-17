@@ -57,7 +57,6 @@ def fetch_ranking(page, store, url):
 
     works = []
     seen = set()
-    debug_count = 0
 
     for anchor in all_anchors:
         if len(works) >= 30:
@@ -75,17 +74,10 @@ def fetch_ranking(page, store, url):
                 continue
             seen.add(pid)
 
-            # タイトル
-            raw_title_attr = anchor.get_attribute("title")
-            raw_inner_text = anchor.inner_text()
-            if debug_count < 5:
-                outer_html = anchor.evaluate("el => el.outerHTML")
-                print(f"  DEBUG pid={pid} outerHTML={outer_html[:300]}")
-                debug_count += 1
-            title = (raw_title_attr or raw_inner_text).strip()
+            # タイトル（title属性 → リンクテキスト → 画像alt属性の順で取得）
+            title = (anchor.get_attribute("title") or anchor.inner_text()).strip()
             title = " ".join(title.split())
             if not title or len(title) < 2:
-                # フォールバック: 画像のalt属性をタイトルとして使う
                 img_el = anchor.query_selector("img")
                 if img_el:
                     alt = img_el.get_attribute("alt") or ""
@@ -309,28 +301,28 @@ tbody tr:hover td{background:var(--rose-50)}
         <div class="header-title">ポケドラ ランキング分析</div>
         <div class="header-sub">ドラマCD人気作品データ</div>
     </div>
-    <div class="header-update">🔄 毎日23:30頃更新 ／ {today_str}</div>
+    <div class="header-update">🔄 毎日23:30頃更新 ／ @@TODAY_STR@@</div>
 </div>
 
 <div class="stat-row">
     <div class="stat-card">
         <div class="stat-label">📦 収録作品数</div>
-        <div class="stat-value">{total_works}</div>
+        <div class="stat-value">@@TOTAL_WORKS@@</div>
         <div class="stat-sub">オトナ向けランキング</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">✨ 新着</div>
-        <div class="stat-value">{new_today}</div>
-        <div class="stat-sub">{today_str}</div>
+        <div class="stat-value">@@NEW_TODAY@@</div>
+        <div class="stat-sub">@@TODAY_STR@@</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">📈 急上昇作品</div>
-        <div class="stat-value">{rising_count}</div>
+        <div class="stat-value">@@RISING_COUNT@@</div>
         <div class="stat-sub">前日比10位以上上昇</div>
     </div>
 </div>
 
-{rising_section}
+@@RISING_SECTION@@
 
 <div class="section">
     <div class="section-head">
@@ -351,7 +343,7 @@ tbody tr:hover td{background:var(--rose-50)}
             <tr><th></th><th>タイトル / 声優</th><th>声優</th><th>推移</th><th class="chart-cell">推移グラフ（30日）</th></tr>
         </thead>
         <tbody>
-{ranking_rows}
+@@RANKING_ROWS@@
         </tbody>
     </table>
     </div>
@@ -364,21 +356,21 @@ tbody tr:hover td{background:var(--rose-50)}
 
 </div>
 <script>
-const graphData = {graph_data_json};
+const graphData = @@GRAPH_DATA_JSON@@;
 const PINK = '#e8528a';
 
-function drawChart(canvasId, pid) {{
+function drawChart(canvasId, pid) {
     const ctx = document.getElementById(canvasId);
     if (!ctx) return;
     const d = graphData[pid];
-    if (!d) {{ ctx.parentElement.innerHTML = '<span class="no-data">データ蓄積中</span>'; return; }}
+    if (!d) { ctx.parentElement.innerHTML = '<span class="no-data">データ蓄積中</span>'; return; }
     const disp = d.ranks.map(v => (v === null || v === undefined) ? null : (v > 14 ? 15 : v));
     const isSingle = d.ranks.filter(v => v !== null).length === 1;
-    new Chart(ctx, {{
+    new Chart(ctx, {
         type: 'line',
-        data: {{
+        data: {
             labels: d.labels,
-            datasets: [{{
+            datasets: [{
                 data: disp,
                 borderColor: PINK,
                 backgroundColor: 'transparent',
@@ -389,49 +381,49 @@ function drawChart(canvasId, pid) {{
                 fill: false,
                 tension: 0.4,
                 spanGaps: false,
-            }}]
-        }},
-        options: {{
+            }]
+        },
+        options: {
             responsive: true,
             maintainAspectRatio: false,
-            layout: {{ padding: {{ top: 6, left: 2 }} }},
-            interaction: {{ mode: 'index', intersect: false }},
-            scales: {{
-                y: {{
+            layout: { padding: { top: 6, left: 2 } },
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                y: {
                     reverse: true, min: -1, max: 17,
-                    ticks: {{
-                        font: {{ size: 11 }}, color: '#b8829a',
+                    ticks: {
+                        font: { size: 11 }, color: '#b8829a',
                         callback: v => v===1?'1位':v===5?'5位':v===10?'10位':v===15?'圏外':null
-                    }},
-                    beforeFit: axis => {{
-                        axis.ticks = [{{value:1,label:'1位'}},{{value:5,label:'5位'}},{{value:10,label:'10位'}},{{value:15,label:'圏外'}}];
-                    }},
-                    grid: {{ color: 'rgba(232,82,138,0.07)' }},
-                    border: {{ display: false }}
-                }},
-                x: {{
-                    ticks: {{ font: {{ size: 9 }}, color: '#b8829a', maxTicksLimit: 4 }},
-                    grid: {{ display: false }}, border: {{ display: false }}
-                }}
-            }},
-            plugins: {{
-                legend: {{ display: false }},
-                tooltip: {{
-                    callbacks: {{
-                        label: c => {{
+                    },
+                    beforeFit: axis => {
+                        axis.ticks = [{value:1,label:'1位'},{value:5,label:'5位'},{value:10,label:'10位'},{value:15,label:'圏外'}];
+                    },
+                    grid: { color: 'rgba(232,82,138,0.07)' },
+                    border: { display: false }
+                },
+                x: {
+                    ticks: { font: { size: 9 }, color: '#b8829a', maxTicksLimit: 4 },
+                    grid: { display: false }, border: { display: false }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: c => {
                             const raw = d.ranks[c.dataIndex];
                             if (raw === null || raw === undefined) return '';
                             return raw > 30 ? '圏外' : raw + '位';
-                        }}
-                    }},
-                    titleFont: {{ size: 11 }}, bodyFont: {{ size: 12 }}, padding: 8,
+                        }
+                    },
+                    titleFont: { size: 11 }, bodyFont: { size: 12 }, padding: 8,
                     backgroundColor: 'rgba(139,26,66,0.85)',
                     titleColor: '#fde0e7', bodyColor: '#fff',
-                }}
-            }}
-        }}
-    }});
-}}
+                }
+            }
+        }
+    });
+}
 
 document.querySelectorAll('canvas[data-pid]').forEach(c => drawChart(c.id, c.dataset.pid));
 </script>
@@ -550,15 +542,14 @@ def generate_html(ranking, rising, graph_data, today_str, total_works, new_today
     else:
         rising_section = ""
 
-    html = HTML_TEMPLATE.format(
-        today_str=today_str,
-        total_works=total_works,
-        new_today=new_today,
-        rising_count=len(rising),
-        rising_section=rising_section,
-        ranking_rows="\n".join(ranking_rows),
-        graph_data_json=json.dumps(graph_data, ensure_ascii=False),
-    )
+    html = HTML_TEMPLATE
+    html = html.replace("@@TODAY_STR@@", today_str)
+    html = html.replace("@@TOTAL_WORKS@@", str(total_works))
+    html = html.replace("@@NEW_TODAY@@", str(new_today))
+    html = html.replace("@@RISING_COUNT@@", str(len(rising)))
+    html = html.replace("@@RISING_SECTION@@", rising_section)
+    html = html.replace("@@RANKING_ROWS@@", "\n".join(ranking_rows))
+    html = html.replace("@@GRAPH_DATA_JSON@@", json.dumps(graph_data, ensure_ascii=False))
     return html
 
 # ----------------------------------------
