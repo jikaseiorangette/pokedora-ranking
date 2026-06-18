@@ -299,6 +299,7 @@ tbody tr:hover td{background:var(--rose-50)}
         <div class="header-sub">ドラマCD人気作品データ</div>
     </div>
     <div class="header-update">🔄 毎日23:30頃更新 ／ {today_str}</div>
+    <a href="catalog.html" style="font-size:12px;color:var(--rose-600);background:var(--rose-50);border:0.5px solid var(--border);border-radius:20px;padding:6px 14px;text-decoration:none;white-space:nowrap;margin-left:8px">📚 作品DB</a>
 </div>
 
 <div class="stat-row">
