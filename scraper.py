@@ -30,7 +30,9 @@ def fetch_ranking(page, store, url):
     print(f"  [{store}] アクセス中: {url}")
     for attempt in range(3):
         try:
-            page.goto(url, wait_until="networkidle", timeout=60000)
+            # networkidleは常時通信があるサイトでタイムアウトしやすいため
+            # domcontentloadedに変更し、タイムアウトも延長
+            page.goto(url, wait_until="domcontentloaded", timeout=90000)
             break
         except Exception as e:
             print(f"  失敗({attempt+1}/3): {e}")
@@ -38,7 +40,8 @@ def fetch_ranking(page, store, url):
                 time.sleep(10)
             else:
                 raise
-    time.sleep(3)
+    # ページ内のJS描画・年齢確認リダイレクトなどを待つため少し長めに待機
+    time.sleep(6)
 
     soup = BeautifulSoup(page.content(), "html.parser")
     works = []
