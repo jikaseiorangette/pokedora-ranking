@@ -299,7 +299,6 @@ tbody tr:hover td{background:var(--rose-50)}
         <div class="header-sub">ドラマCD人気作品データ</div>
     </div>
     <div class="header-update">🔄 毎日23:30頃更新 ／ {today_str}</div>
-    <a href="catalog.html" style="font-size:12px;color:var(--rose-600);background:var(--rose-50);border:0.5px solid var(--border);border-radius:20px;padding:6px 14px;text-decoration:none;white-space:nowrap;margin-left:8px">📚 作品DB</a>
 </div>
 
 <div class="stat-row">
@@ -314,9 +313,9 @@ tbody tr:hover td{background:var(--rose-50)}
         <div class="stat-sub">{today_str}</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">📈 急上昇作品</div>
+        <div class="stat-label">🔔 近日配信予定</div>
         <div class="stat-value">{rising_count}</div>
-        <div class="stat-sub">前日比10位以上上昇</div>
+        <div class="stat-sub">配信開始前の作品</div>
     </div>
 </div>
 
@@ -492,15 +491,58 @@ def make_rising_row(w, rise, canvas_id):
             <td class="chart-cell"><canvas id="{canvas_id}" class="chart-wrap" data-pid="{w['product_id']}"></canvas></td>
         </tr>"""
 
-def generate_html(ranking, rising, graph_data, today_str, total_works, new_today):
-    # TOP10のみ表示（がるまにに合わせる）
+def extract_preorders(works):
+    """タイトルに配信開始日が含まれる作品を近日配信予定として抽出（発売日順）"""
+    preorders = []
+    for w in works:
+        m = re.search(r'《?配信開始は(\d{4}年\d{1,2}月\d{1,2}日)', w["title"])
+        if m:
+            date_str = m.group(1)
+            # YYYY年MM月DD日 → YYYY-MM-DD
+            dm = re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', date_str)
+            if dm:
+                release_date = f"{dm.group(1)}-{int(dm.group(2)):02d}-{int(dm.group(3)):02d}"
+                # タイトルから《配信開始は...》を除去
+                clean_title = re.sub(r'《?配信開始は[^》）]+[》）]?\s*', '', w["title"]).strip()
+                preorders.append({**w, "release_date": release_date, "clean_title": clean_title})
+    preorders.sort(key=lambda x: x["release_date"])
+    return preorders[:5]
+
+
+def make_preorder_row(w, index):
+    pid = w["product_id"]
+    title = w.get("clean_title", w["title"])
+    release_date = w.get("release_date", "")
+    url = w["work_url"]
+    img = w["thumb_url"]
+    voice = w.get("voice_actor", "")
+    tags = w.get("tags", [])
+    rb_cls = "rn"
+    rb = f'<span class="rb {rb_cls}">{index+1}</span>'
+    tag_html = "".join(f'<span class="gtag">{t}</span>' for t in tags[:4])
+    return f"""<tr>
+            <td class="thumb-wrap">
+                <span class="thumb-rank">{rb}</span>
+                <a href="{url}" target="_blank" rel="noopener"><img src="{img}" alt="" loading="lazy"></a>
+            </td>
+            <td class="title-cell">
+                <div class="work-title"><a href="{url}" target="_blank" rel="noopener">{title}</a></div>
+                <div class="work-circle">{voice}</div>
+                <div class="genres">{tag_html}</div>
+            </td>
+            <td style="font-size:11px;color:var(--text-sub)">{voice}</td>
+            <td class="release-date-cell">{release_date}</td>
+        </tr>"""
+
+
+def generate_html(ranking, preorders, graph_data, today_str, total_works, new_today):
+    # TOP10のみ表示
     top10 = ranking[:10]
 
     # 前日ランク取得用マップ
     prev_map = {}
     today_dt = datetime.strptime(today_str.replace("/", "-"), "%Y-%m-%d")
     prev_date = (today_dt - timedelta(days=1)).strftime("%Y-%m-%d")
-    # graph_dataから前日ランクを引く
     for pid, gd in graph_data.items():
         if prev_date in gd["labels"]:
             idx = gd["labels"].index(prev_date)
@@ -517,25 +559,23 @@ def generate_html(ranking, rising, graph_data, today_str, total_works, new_today
         is_new = (pid not in prev_map)
         ranking_rows.append(make_row(w, rank_change, is_new, f"wc_{i+1}"))
 
-    # 急上昇セクション
-    if rising:
-        rows = []
-        for i, (w, rise) in enumerate(rising):
-            rows.append(make_rising_row(w, rise, f"rc_{i+1}"))
-        rising_section = f"""<div class="section">
+    # 近日配信予定セクション
+    if preorders:
+        rows = [make_preorder_row(w, i) for i, w in enumerate(preorders)]
+        preorder_section = f"""<div class="section">
     <div class="section-head">
-        <span style="font-size:16px">🔥</span>
-        <span class="section-title">急上昇作品</span>
-        <span class="section-badge">前日比10位以上上昇</span>
+        <span style="font-size:16px">🔔</span>
+        <span class="section-title">近日配信予定</span>
+        <span class="section-badge">配信開始前の作品</span>
     </div>
     <div class="table-card">
     <table>
         <colgroup>
             <col style="width:150px"><col style="width:auto">
-            <col style="width:10%"><col style="width:8%"><col style="width:28%">
+            <col style="width:10%"><col style="width:12%">
         </colgroup>
         <thead>
-            <tr><th></th><th>タイトル / 声優</th><th>声優</th><th>上昇幅</th><th class="chart-cell">推移グラフ（30日）</th></tr>
+            <tr><th></th><th>タイトル / 声優</th><th>声優</th><th>配信予定日</th></tr>
         </thead>
         <tbody>
 {"".join(rows)}
@@ -544,14 +584,14 @@ def generate_html(ranking, rising, graph_data, today_str, total_works, new_today
     </div>
 </div>"""
     else:
-        rising_section = ""
+        preorder_section = ""
 
     html = HTML_TEMPLATE.format(
         today_str=today_str,
         total_works=total_works,
         new_today=new_today,
-        rising_count=len(rising),
-        rising_section=rising_section,
+        rising_count=len(preorders),
+        rising_section=preorder_section,
         ranking_rows="\n".join(ranking_rows),
         graph_data_json=json.dumps(graph_data, ensure_ascii=False),
     )
@@ -596,46 +636,50 @@ def run():
     prev_date = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
     prev_data = history.get(store, {}).get(prev_date, {})
 
-    # 急上昇（前日比10位以上上昇、前日圏外除く）
-    rising = []
-    for w in works:
-        pid = w["product_id"]
-        prev_rank = prev_data.get(pid)
-        if prev_rank and (prev_rank - w["rank"]) >= 10:
-            rising.append((w, prev_rank - w["rank"]))
-    rising.sort(key=lambda x: -x[1])
-    rising = rising[:5]
+    # 近日配信予定（タイトルに配信開始日を含む作品）
+    preorders = extract_preorders(works)
 
-    # グラフデータ（TOP10 + 急上昇）
+    # グラフデータ（TOP10 + 近日配信予定）
     all_pids = list(dict.fromkeys(
         [w["product_id"] for w in works[:10]] +
-        [w["product_id"] for w, _ in rising]
+        [w["product_id"] for w in preorders]
     ))
     graph_data = build_graph_data(history, store, all_pids, today)
 
-    # ★ ranking-hub（統合サイト）が直接fetchできるよう、graph_dataを単体JSONとして保存
+    # ranking-hub用：graph_dataを単体JSONとして保存
     graph_path = DATA_DIR / f"graph_{store}.json"
     graph_path.write_text(json.dumps(graph_data, ensure_ascii=False), encoding="utf-8")
     print(f"  graph_{store}.json 保存完了（{len(graph_data)}件）")
 
     # 統計
     total_works = len(works)
-    # 新着＝前日のランキングになかった作品
     new_today = sum(1 for w in works if w["product_id"] not in prev_data)
 
-    # ★ ranking-hub（統合サイト）が直接fetchできるよう、統計情報を単体JSONとして保存
+    # ranking-hub用：統計情報を単体JSONとして保存
     meta = {
         "updated": today_str,
         "total_works": total_works,
         "new_today": new_today,
-        "rising_count": len(rising),
+        "preorder_count": len(preorders),
+        "preorders": [
+            {
+                "id": w["product_id"],
+                "title": w.get("clean_title", w["title"]),
+                "voice_actor": w.get("voice_actor", ""),
+                "release_date": w.get("release_date", ""),
+                "thumb_url": w["thumb_url"],
+                "work_url": w["work_url"],
+                "tags": w.get("tags", [])[:4],
+            }
+            for w in preorders
+        ],
     }
     meta_path = DATA_DIR / f"meta_{store}.json"
     meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
-    print(f"  meta_{store}.json 保存完了")
+    print(f"  meta_{store}.json 保存完了（近日配信予定: {len(preorders)}件）")
 
     # HTML生成
-    html = generate_html(works, rising, graph_data, today_str, total_works, new_today)
+    html = generate_html(works, preorders, graph_data, today_str, total_works, new_today)
 
     # docs/index.html に出力（GitHub Pages用）
     docs_dir = Path("docs")
