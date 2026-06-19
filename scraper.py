@@ -40,21 +40,8 @@ def fetch_ranking(page, store, url):
                 time.sleep(10)
             else:
                 raise
-    # ページ内のJS描画・年齢確認リダイレクトなどを待つため少し長めに待機
-    time.sleep(6)
-
-    # ===== 年齢確認ページの自動突破を試みる =====
-    try:
-        for label in ["はい", "はい、18歳以上です", "ENTER", "Yes", "18歳以上"]:
-            btn = page.locator(f"a:has-text('{label}'), button:has-text('{label}')").first
-            if btn.count() > 0:
-                print(f"  [DEBUG] 年齢確認ボタン「{label}」をクリックします")
-                btn.click(timeout=5000)
-                page.wait_for_load_state("domcontentloaded", timeout=30000)
-                time.sleep(3)
-                break
-    except Exception as e:
-        print(f"  [DEBUG] 年齢確認ボタン処理でエラー（無視して続行): {e}")
+    # JS描画完了まで待機（ランキングリストはJS描画のため長めに）
+    time.sleep(10)
 
     # ===== デバッグ情報出力 =====
     print(f"  [DEBUG] 現在のURL: {page.url}")
@@ -72,10 +59,9 @@ def fetch_ranking(page, store, url):
                 print(f"  [DEBUG] 年齢確認ボタン候補発見: <{el.name}> text='{t}' href='{el.get('href','')}'")
 
     n_product_id_links = len(soup.select("a[href*='product_id']"))
-    n_detail_links = len(soup.select("a[href*='/products/detail.php']"))
+    n_thumb_imgs = len(soup.select("img.product_thumb_image"))
     print(f"  [DEBUG] product_id を含むリンク数: {n_product_id_links}")
-    print(f"  [DEBUG] /products/detail.php を含むリンク数: {n_detail_links}")
-    print(f"  [DEBUG] HTML先頭500文字: {str(soup)[:500]}")
+    print(f"  [DEBUG] img.product_thumb_image の件数: {n_thumb_imgs}")
 
     works = []
     seen = set()
@@ -470,13 +456,15 @@ def make_row(w, rank_change, is_new, canvas_id):
     th = thumb_html(w)
     tg = tags_html(w["tags"])
     ch = change_html(rank_change, is_new)
+    # タイトルから《配信開始は...》を除去
+    title = re.sub(r'《?配信開始は[^》）]+[》）]?\s*', '', w['title']).strip()
     return f"""        <tr>
             <td class="thumb-wrap">
                 <span class="thumb-rank">{rb}</span>
                 <a href="{w['work_url']}" target="_blank" rel="noopener">{th}</a>
             </td>
             <td class="title-cell">
-                <div class="work-title"><a href="{w['work_url']}" target="_blank" rel="noopener">{w['title']}</a></div>
+                <div class="work-title"><a href="{w['work_url']}" target="_blank" rel="noopener">{title}</a></div>
                 <div class="work-circle">{w['voice_actor']}</div>
                 {tg}
             </td>
