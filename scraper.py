@@ -613,35 +613,40 @@ def run():
     ))
     graph_data = build_graph_data(history, store, all_pids, today)
 
-    # ★ ranking-hub（統合サイト）が直接fetchできるよう、graph_dataを単体JSONとして保存
-    graph_path = DATA_DIR / f"graph_{store}.json"
-    graph_path.write_text(json.dumps(graph_data, ensure_ascii=False), encoding="utf-8")
-    print(f"  graph_{store}.json 保存完了（{len(graph_data)}件）")
-
     # 統計
     total_works = len(works)
     # 新着＝前日のランキングになかった作品
     new_today = sum(1 for w in works if w["product_id"] not in prev_data)
 
-    # ★ ranking-hub（統合サイト）が直接fetchできるよう、統計情報を単体JSONとして保存
     meta = {
         "updated": today_str,
         "total_works": total_works,
         "new_today": new_today,
         "rising_count": len(rising),
     }
-    meta_path = DATA_DIR / f"meta_{store}.json"
-    meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
-    print(f"  meta_{store}.json 保存完了")
 
     # HTML生成
     html = generate_html(works, rising, graph_data, today_str, total_works, new_today)
 
-    # docs/index.html に出力（GitHub Pages用）
+    # docs/ 以下に出力（GitHub Pages用）
     docs_dir = Path("docs")
     docs_dir.mkdir(exist_ok=True)
+    docs_data_dir = docs_dir / "data"
+    docs_data_dir.mkdir(exist_ok=True)
+
     (docs_dir / "index.html").write_text(html, encoding="utf-8")
     print(f"\n✅ docs/index.html 生成完了")
+
+    # ranking-hub などが GitHub Pages 経由でfetchできるよう docs/data/ にも保存
+    graph_json = json.dumps(graph_data, ensure_ascii=False)
+    (DATA_DIR / f"graph_{store}.json").write_text(graph_json, encoding="utf-8")
+    (docs_data_dir / f"graph_{store}.json").write_text(graph_json, encoding="utf-8")
+    print(f"  graph_{store}.json 保存完了（{len(graph_data)}件）")
+
+    meta_json = json.dumps(meta, ensure_ascii=False)
+    (DATA_DIR / f"meta_{store}.json").write_text(meta_json, encoding="utf-8")
+    (docs_data_dir / f"meta_{store}.json").write_text(meta_json, encoding="utf-8")
+    print(f"  meta_{store}.json 保存完了")
 
 if __name__ == "__main__":
     run()
