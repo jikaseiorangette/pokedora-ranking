@@ -661,10 +661,13 @@ def run():
     graph_data = build_graph_data(history, store, all_pids, today)
 
     # ranking-hub用：graph_dataを単体JSONとして保存
-    graph_path = DATA_DIR / f"graph_{store}.json"
-    graph_path.write_text(json.dumps(graph_data, ensure_ascii=False), encoding="utf-8")
+    graph_json = json.dumps(graph_data, ensure_ascii=False)
+    # data/（履歴保持用）とdocs/data/（GitHub Pages配信用）の両方に保存
+    (DATA_DIR / f"graph_{store}.json").write_text(graph_json, encoding="utf-8")
+    docs_data_dir = Path("docs") / "data"
+    docs_data_dir.mkdir(parents=True, exist_ok=True)
+    (docs_data_dir / f"graph_{store}.json").write_text(graph_json, encoding="utf-8")
     print(f"  graph_{store}.json 保存完了（{len(graph_data)}件）")
-
     # 統計
     total_works = len(works)
     new_today = sum(1 for w in works if w["product_id"] not in prev_data)
@@ -688,30 +691,19 @@ def run():
             for w in preorders
         ],
     }
-    meta_path = DATA_DIR / f"meta_{store}.json"
-    meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    meta_json = json.dumps(meta, ensure_ascii=False)
+    (DATA_DIR / f"meta_{store}.json").write_text(meta_json, encoding="utf-8")
+    (Path("docs") / "data" / f"meta_{store}.json").write_text(meta_json, encoding="utf-8")
     print(f"  meta_{store}.json 保存完了（近日配信予定: {len(preorders)}件）")
 
     # HTML生成
     html = generate_html(works, preorders, graph_data, today_str, total_works, new_today)
 
-    # docs/ 以下に出力（GitHub Pages用）
+    # docs/index.html に出力（GitHub Pages用）
     docs_dir = Path("docs")
     docs_dir.mkdir(exist_ok=True)
-    docs_data_dir = docs_dir / "data"
-    docs_data_dir.mkdir(exist_ok=True)
-
     (docs_dir / "index.html").write_text(html, encoding="utf-8")
     print(f"\n✅ docs/index.html 生成完了")
-
-    # ranking-hubなど外部サイトがGitHub Pages経由でfetchできるよう docs/data/ にも保存
-    (docs_data_dir / f"graph_{store}.json").write_text(
-        json.dumps(graph_data, ensure_ascii=False), encoding="utf-8"
-    )
-    (docs_data_dir / f"meta_{store}.json").write_text(
-        json.dumps(meta, ensure_ascii=False), encoding="utf-8"
-    )
-    print(f"  docs/data/graph_{store}.json・meta_{store}.json 保存完了")
 
 if __name__ == "__main__":
     run()
