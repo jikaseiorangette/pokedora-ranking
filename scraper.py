@@ -148,10 +148,28 @@ def save_latest(store, works):
     path.write_text(json.dumps(works, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def update_history(history, store, today, works):
-    """historyにその日のランキングを記録（product_id: rank の辞書形式）"""
+    """historyにその日のランキングを記録（product_id: rank の辞書形式）
+    過去に記録された作品が今日ランキング外なら31（圏外）として記録する"""
     if store not in history:
         history[store] = {}
-    history[store][today] = {w["product_id"]: w["rank"] for w in works}
+
+    today_ranked = {w["product_id"]: w["rank"] for w in works}
+
+    # 過去に追跡していた全product_idを収集
+    all_tracked_pids = set()
+    for day_data in history[store].values():
+        all_tracked_pids.update(day_data.keys())
+
+    # 今日のデータ：ランキング入りは実rank、圏外は31
+    today_data = {}
+    for pid in all_tracked_pids:
+        today_data[pid] = today_ranked.get(pid, 31)  # 31 = 圏外
+    # 今日新たにランクインした作品も追加
+    for pid, rank in today_ranked.items():
+        today_data[pid] = rank
+
+    history[store][today] = today_data
+
     # 90日以上前のデータを削除
     cutoff = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=90)).strftime("%Y-%m-%d")
     history[store] = {d: v for d, v in history[store].items() if d >= cutoff}
