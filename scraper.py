@@ -80,42 +80,55 @@ def fetch_ranking(page, store, url):
     works = []
     seen = set()
 
-    for link in soup.select("a[href*='/products/detail.php']"):
+    # product_thumb_imageクラスのimgタグから作品情報を抽出
+    for img in soup.select("img.product_thumb_image"):
         if len(works) >= 30:
             break
-        href = link.get("href", "")
-        m = re.search(r'product_id=(\d+)', href)
-        if not m:
-            continue
-        pid = m.group(1)
-        if pid in seen:
-            continue
-        seen.add(pid)
 
-        title = (link.get("title") or link.get_text()).strip()
+        # タイトルはalt属性
+        title = img.get("alt", "").strip()
         title = re.sub(r'\s+', ' ', title)
         if not title or len(title) < 2:
             continue
 
-        work_url = href if href.startswith("http") else f"https://pokedora.com{href}"
+        # 親要素からproduct_idを含むリンクを探す
+        parent = img.find_parent()
+        pid = None
+        work_url = ""
+        for _ in range(6):  # 最大6階層上まで探す
+            if parent is None:
+                break
+            link = parent.find("a", href=re.compile(r'product_id=\d+'))
+            if link:
+                m = re.search(r'product_id=(\d+)', link.get("href", ""))
+                if m:
+                    pid = m.group(1)
+                    href = link.get("href", "")
+                    work_url = href if href.startswith("http") else f"https://pokedora.com{href}"
+                break
+            parent = parent.find_parent()
 
-        li = link.find_parent("li")
+        if not pid or pid in seen:
+            continue
+        seen.add(pid)
+
+        # サムネイルURL
+        src = img.get("src", "")
+        thumb_url = ""
+        if src and "nowprinting" not in src:
+            thumb_url = src if src.startswith("http") else f"https://pokedora.com{src}"
+
+        # 声優・タグは同一li/div内から取得
+        container = img.find_parent("li") or img.find_parent("div")
         voice_actor = ""
         tags = []
-        thumb_url = ""
-
-        if li:
-            vas = [a.get_text(strip=True) for a in li.select("a[href*='tag_type=1']") if a.get_text(strip=True)]
+        if container:
+            vas = [a.get_text(strip=True) for a in container.select("a[href*='tag_type=1']") if a.get_text(strip=True)]
             voice_actor = "、".join(vas)
-            li_text = li.get_text()
+            ct = container.get_text()
             for tc in ["NEW", "配信限定シチュエーション", "シチュエーションCD", "ドラマCD", "割引", "特典あり"]:
-                if tc in li_text:
+                if tc in ct:
                     tags.append(tc)
-            img = li.select_one("img")
-            if img:
-                src = img.get("src", "")
-                if src and "nowprinting" not in src:
-                    thumb_url = src if src.startswith("http") else f"https://pokedora.com{src}"
 
         works.append({
             "rank":        len(works) + 1,
@@ -124,7 +137,7 @@ def fetch_ranking(page, store, url):
             "voice_actor": voice_actor,
             "tags":        tags,
             "thumb_url":   thumb_url,
-            "work_url":    work_url,
+            "work_url":    work_url or f"https://pokedora.com/products/detail.php?product_id={pid}",
         })
         print(f"    {len(works)}位: {title[:40]}")
 
