@@ -427,9 +427,10 @@ def rank_badge(rank):
     return f'<span class="rb {cls}">{rank}</span>'
 
 def thumb_html(w):
-    if w["thumb_url"]:
-        return f'<img src="{w["thumb_url"]}" alt="" loading="lazy">'
-    return '<div style="width:146px;height:110px;border-radius:8px;background:var(--rose-100);display:flex;align-items:center;justify-content:center;font-size:28px">🎧</div>'
+    url = w.get("thumb_url", "")
+    if not url:
+        url = f"https://pokedora.com/get_image.php?product_id={w['product_id']}"
+    return f'<img src="{url}" alt="" loading="lazy">'
 
 def tags_html(tags):
     if not tags:
@@ -510,16 +511,18 @@ def make_preorder_row(w, index):
     title = w.get("clean_title", w["title"])
     release_date = w.get("release_date", "")
     url = w["work_url"]
-    img = w["thumb_url"]
+    img_url = w.get("thumb_url", "")
+    # サムネイルがない場合はproduct_idから自動生成
+    if not img_url:
+        img_url = f"https://pokedora.com/get_image.php?product_id={pid}"
     voice = w.get("voice_actor", "")
     tags = w.get("tags", [])
-    rb_cls = "rn"
-    rb = f'<span class="rb {rb_cls}">{index+1}</span>'
+    rb = f'<span class="rb rn">{index+1}</span>'
     tag_html = "".join(f'<span class="gtag">{t}</span>' for t in tags[:4])
     return f"""<tr>
             <td class="thumb-wrap">
                 <span class="thumb-rank">{rb}</span>
-                <a href="{url}" target="_blank" rel="noopener"><img src="{img}" alt="" loading="lazy"></a>
+                <a href="{url}" target="_blank" rel="noopener"><img src="{img_url}" alt="" loading="lazy"></a>
             </td>
             <td class="title-cell">
                 <div class="work-title"><a href="{url}" target="_blank" rel="noopener">{title}</a></div>
