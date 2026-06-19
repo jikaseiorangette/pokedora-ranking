@@ -311,28 +311,28 @@ tbody tr:hover td{background:var(--rose-50)}
         <div class="header-title">ポケドラ ランキング分析</div>
         <div class="header-sub">ドラマCD人気作品データ</div>
     </div>
-    <div class="header-update">🔄 毎日23:30頃更新 ／ {today_str}</div>
+    <div class="header-update">🔄 毎日23:30頃更新 ／ $today_str</div>
 </div>
 
 <div class="stat-row">
     <div class="stat-card">
         <div class="stat-label">📦 収録作品数</div>
-        <div class="stat-value">{total_works}</div>
+        <div class="stat-value">$total_works</div>
         <div class="stat-sub">オトナ向けランキング</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">✨ 新着</div>
-        <div class="stat-value">{new_today}</div>
-        <div class="stat-sub">{today_str}</div>
+        <div class="stat-value">$new_today</div>
+        <div class="stat-sub">$today_str</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">🔔 近日配信予定</div>
-        <div class="stat-value">{rising_count}</div>
+        <div class="stat-value">$rising_count</div>
         <div class="stat-sub">配信開始前の作品</div>
     </div>
 </div>
 
-{rising_section}
+$rising_section
 
 <div class="section">
     <div class="section-head">
@@ -353,7 +353,7 @@ tbody tr:hover td{background:var(--rose-50)}
             <tr><th></th><th>タイトル / 声優</th><th>声優</th><th>推移</th><th class="chart-cell">推移グラフ（30日）</th></tr>
         </thead>
         <tbody>
-{ranking_rows}
+$ranking_rows
         </tbody>
     </table>
     </div>
@@ -366,7 +366,7 @@ tbody tr:hover td{background:var(--rose-50)}
 
 </div>
 <script>
-const graphData = {graph_data_json};
+const graphData = $graph_data_json;
 const PINK = '#e8528a';
 
 function drawChart(canvasId, pid) {{
@@ -599,7 +599,8 @@ def generate_html(ranking, preorders, graph_data, today_str, total_works, new_to
     else:
         preorder_section = ""
 
-    html = HTML_TEMPLATE.format(
+    from string import Template
+    html = Template(HTML_TEMPLATE).safe_substitute(
         today_str=today_str,
         total_works=total_works,
         new_today=new_today,
