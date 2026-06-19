@@ -560,7 +560,7 @@ def generate_html(ranking, preorders, graph_data, today_str, total_works, new_to
 
     # 近日配信予定セクション
     if preorders:
-        rows = [make_preorder_row(w, i) for i, w in enumerate(preorders)]
+        rows = [make_preorder_row(w, i) for i, w in enumerate(preorders[:2])]
         preorder_section = f"""<div class="section">
     <div class="section-head">
         <span style="font-size:16px">🔔</span>
