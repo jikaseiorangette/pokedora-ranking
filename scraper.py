@@ -183,23 +183,21 @@ def fetch_new_works(page, store, work_meta, today):
         if not title_raw or len(title_raw) < 2:
             continue
 
-        # 発売日を解決
-        release_date = ""
-        dm = re.search(r"《?配信開始は(\d{4})年(\d{1,2})月(\d{1,2})日", title_raw)
-        if dm:
-            release_date = f"{dm.group(1)}-{int(dm.group(2)):02d}-{int(dm.group(3)):02d}"
-        else:
-            release_date = today  # 日付なし = 今日が発売日
-
         clean_title = re.sub(r"《?配信開始は[^》）]+[》）]?\s*", "", title_raw).strip()
 
         if pid not in work_meta:
             work_meta[pid] = {}
-        work_meta[pid]["release_date"] = release_date
-        work_meta[pid]["title"] = clean_title
-        # 初めて新着一覧で見つけた日を記録（新着判定に使用）
+
+        # 初めて新着一覧で見つけた日を記録（予約開始日）
         if "registered_date" not in work_meta[pid]:
             work_meta[pid]["registered_date"] = today
+
+        # タイトルに発売予定日が含まれる場合はscheduled_dateとして記録
+        dm = re.search(r"《?配信開始は(\d{4})年(\d{1,2})月(\d{1,2})日", title_raw)
+        if dm and "scheduled_date" not in work_meta[pid]:
+            work_meta[pid]["scheduled_date"] = f"{dm.group(1)}-{int(dm.group(2)):02d}-{int(dm.group(3)):02d}"
+
+        work_meta[pid]["title"] = clean_title
         updated += 1
 
     print(f"  発売日確定: {updated}件（累計: {len(work_meta)}件）")
@@ -545,8 +543,16 @@ def make_row(w, rank_change, is_new, canvas_id):
     tg = tags_html(w["tags"])
     ch = change_html(rank_change, is_new)
     title = re.sub(r'《?配信開始は[^》）]+[》）]?\s*', '', w['title']).strip()
+    # 発売日確定済みなら「発売日」、発売予定日があれば「予約開始」で表示
     release_date = w.get("release_date", "")
-    date_span = f'<span class="work-date">{release_date}</span>' if release_date else ""
+    scheduled_date = w.get("scheduled_date", "")
+    registered_date = w.get("registered_date", "")
+    if release_date:
+        date_span = f'<span class="work-date">発売日: {release_date}</span>'
+    elif scheduled_date:
+        date_span = f'<span class="work-date">予約開始: {registered_date}</span>' if registered_date else ""
+    else:
+        date_span = ""
     return f"""        <tr>
             <td class="thumb-wrap">
                 <span class="thumb-rank">{rb}</span>
@@ -581,37 +587,39 @@ def make_rising_row(w, rise, canvas_id):
             <td class="chart-cell"><canvas id="{canvas_id}" class="chart-wrap" data-pid="{w['product_id']}"></canvas></td>
         </tr>"""
 
-def extract_preorders(works):
-    """タイトルに配信開始日が含まれる作品を近日配信予定として抽出（発売日順）"""
+def extract_preorders(works, work_meta):
+    """scheduled_dateが設定されている（発売予定日が未来の）作品を近日配信予定として抽出"""
     preorders = []
     for w in works:
-        m = re.search(r'《?配信開始は(\d{4}年\d{1,2}月\d{1,2}日)', w["title"])
-        if m:
-            date_str = m.group(1)
-            # YYYY年MM月DD日 → YYYY-MM-DD
-            dm = re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', date_str)
-            if dm:
-                release_date = f"{dm.group(1)}-{int(dm.group(2)):02d}-{int(dm.group(3)):02d}"
-                # タイトルから《配信開始は...》を除去
-                clean_title = re.sub(r'《?配信開始は[^》）]+[》）]?\s*', '', w["title"]).strip()
-                preorders.append({**w, "release_date": release_date, "clean_title": clean_title})
-    preorders.sort(key=lambda x: x["release_date"])
+        pid = w["product_id"]
+        scheduled = w.get("scheduled_date", "") or work_meta.get(pid, {}).get("scheduled_date", "")
+        if scheduled:
+            clean_title = re.sub(r'《?配信開始は[^》）]+[》）]?\s*', '', w["title"]).strip()
+            registered = w.get("registered_date", "") or work_meta.get(pid, {}).get("registered_date", "")
+            preorders.append({
+                **w,
+                "scheduled_date": scheduled,
+                "registered_date": registered,
+                "clean_title": clean_title,
+            })
+    preorders.sort(key=lambda x: x["scheduled_date"])
     return preorders[:5]
 
 
 def make_preorder_row(w, index):
     pid = w["product_id"]
     title = w.get("clean_title", w["title"])
-    release_date = w.get("release_date", "")
+    scheduled_date = w.get("scheduled_date", "")
+    registered_date = w.get("registered_date", "")
     url = w["work_url"]
     img_url = w.get("thumb_url", "")
-    # サムネイルがない場合はproduct_idから自動生成
     if not img_url:
         img_url = f"https://pokedora.com/get_image.php?product_id={pid}"
     voice = w.get("voice_actor", "")
     tags = w.get("tags", [])
     rb = f'<span class="rb rn">{index+1}</span>'
     tag_html = "".join(f'<span class="gtag">{t}</span>' for t in tags[:4])
+    registered_span = f'<span class="work-date">予約開始: {registered_date}</span>' if registered_date else ""
     return f"""<tr>
             <td class="thumb-wrap">
                 <span class="thumb-rank">{rb}</span>
@@ -619,11 +627,11 @@ def make_preorder_row(w, index):
             </td>
             <td class="title-cell">
                 <div class="work-title"><a href="{url}" target="_blank" rel="noopener">{title}</a></div>
-                <div class="work-circle">{voice}</div>
+                <div class="work-circle">{registered_span}{voice}</div>
                 <div class="genres">{tag_html}</div>
             </td>
             <td style="font-size:11px;color:var(--text-sub)">{voice}</td>
-            <td class="release-date-cell">{release_date}</td>
+            <td class="release-date-cell">{scheduled_date}</td>
         </tr>"""
 
 
@@ -733,13 +741,43 @@ def run():
         print("取得データなし・終了")
         return
 
-    # ランキング作品にwork_metaから発売日を付与
+    # ランキング作品にwork_metaから発売日情報を付与
     for w in works:
         pid = w["product_id"]
-        if not w.get("release_date") and work_meta.get(pid, {}).get("release_date"):
-            w["release_date"] = work_meta[pid]["release_date"]
+        meta_entry = work_meta.get(pid, {})
 
-    # JSON保存（release_date付き）
+        scheduled = meta_entry.get("scheduled_date", "")
+        registered = meta_entry.get("registered_date", "")
+        release = meta_entry.get("release_date", "")
+
+        # 発売予定日を過ぎていれば発売日として確定（ランキング登場有無に関わらず）
+        if scheduled and today >= scheduled and not release:
+            work_meta[pid]["release_date"] = scheduled
+            release = scheduled
+            print(f"  発売日確定: {pid} → {scheduled}")
+
+        # 表示用フィールドを設定
+        if release:
+            # 発売日確定済み → 発売日を表示
+            w["release_date"] = release
+            w["scheduled_date"] = ""
+            w["registered_date"] = registered
+        elif scheduled:
+            # 発売予定日あり → 予約開始日と発売予定日を表示
+            w["release_date"] = ""
+            w["scheduled_date"] = scheduled
+            w["registered_date"] = registered
+        else:
+            # 予約なし・日付なし → 今日を発売日として設定
+            if not release:
+                work_meta[pid] = work_meta.get(pid, {})
+                work_meta[pid]["release_date"] = today
+            w["release_date"] = today
+            w["scheduled_date"] = ""
+            w["registered_date"] = registered
+
+    # work_metaを更新保存
+    save_work_meta(work_meta)
 
     # JSON保存
     save_latest(store, works)
@@ -751,7 +789,7 @@ def run():
     prev_data = history.get(store, {}).get(prev_date, {})
 
     # 近日配信予定（タイトルに配信開始日を含む作品）
-    preorders = extract_preorders(works)
+    preorders = extract_preorders(works, work_meta)
 
     # グラフデータ（TOP10 + 近日配信予定）
     all_pids = list(dict.fromkeys(
@@ -785,7 +823,8 @@ def run():
                 "id": w["product_id"],
                 "title": w.get("clean_title", w["title"]),
                 "voice_actor": w.get("voice_actor", ""),
-                "release_date": w.get("release_date", ""),
+                "release_date": w.get("scheduled_date", ""),   # 発売予定日
+                "registered_date": w.get("registered_date", ""),  # 予約開始日
                 "thumb_url": w["thumb_url"],
                 "work_url": w["work_url"],
                 "tags": w.get("tags", [])[:4],
