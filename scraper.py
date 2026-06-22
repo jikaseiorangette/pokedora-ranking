@@ -258,11 +258,22 @@ def build_graph_data(history, store, product_ids, today):
     graph = {}
     for pid in product_ids:
         ranks = []
+        # この作品が最初に記録された日付を取得
+        first_date = None
+        for d in dates:
+            if pid in store_history.get(d, {}):
+                first_date = d
+                break
+
         for d in dates:
             day_data = store_history.get(d, {})
             if pid in day_data:
                 ranks.append(day_data[pid])
+            elif first_date and d > first_date:
+                # 追跡開始後でデータなし = 圏外(31)
+                ranks.append(31)
             else:
+                # 追跡開始前 = 空白（グラフに表示しない）
                 ranks.append(None)
         graph[pid] = {"labels": dates, "ranks": ranks}
     return graph
