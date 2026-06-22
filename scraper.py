@@ -213,7 +213,24 @@ def save_history(history):
 def save_latest(store, works):
     DATA_DIR.mkdir(exist_ok=True)
     path = DATA_DIR / f"latest_{store}.json"
-    path.write_text(json.dumps(works, ensure_ascii=False, indent=2), encoding="utf-8")
+    # release_date・scheduled_dateを明示的に含めて保存
+    output = []
+    for w in works:
+        entry = {
+            "rank": w["rank"],
+            "product_id": w["product_id"],
+            "title": w["title"],
+            "voice_actor": w.get("voice_actor", ""),
+            "tags": w.get("tags", []),
+            "thumb_url": w.get("thumb_url", ""),
+            "work_url": w.get("work_url", ""),
+            "store": w.get("store", store),
+            "release_date": w.get("release_date", ""),
+            "scheduled_date": w.get("scheduled_date", ""),
+            "registered_date": w.get("registered_date", ""),
+        }
+        output.append(entry)
+    path.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def update_history(history, store, today, works):
     """historyにその日のランキングを記録（product_id: rank の辞書形式）
