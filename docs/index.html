@@ -305,6 +305,8 @@ function normalizePoke(items, meta, graphRaw) {
         graphData[pid] = { labels: fullLabels, ranks: filledRanks };
     });
 
+    const newWorkIds = new Set(meta.new_work_ids || []);
+
     const ranking = items.map(it => {
         const pid = it.product_id;
         const g = graphData[pid];
@@ -329,6 +331,8 @@ function normalizePoke(items, meta, graphRaw) {
         } else {
             isNew = true;
         }
+        // 新着判定は当日新着一覧で初登録された作品のみ
+        isNew = newWorkIds.has(pid);
         // サムネイルのフォールバック
         const imgUrl = it.thumb_url || `https://pokedora.com/get_image.php?product_id=${pid}`;
         return {
