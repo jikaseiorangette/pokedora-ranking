@@ -693,6 +693,7 @@ def run():
     today_str = now_jst().strftime("%Y/%m/%d")
     print(f"\n=== ポケドラ スクレイピング開始: {today} ===")
 
+    store = "adt"
     history = load_history()
 
     # 新着一覧から発売日を先に取得・蓄積（ランキング作品への付与に使うため先行実行）
@@ -715,7 +716,6 @@ def run():
         ))
 
         # オトナ向けのみメインページとして生成（がるまに方式に合わせる）
-        store = "adt"
         label, url = CATEGORIES[store]
         print(f"\n--- {label} ---")
 
