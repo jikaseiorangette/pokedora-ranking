@@ -206,6 +206,12 @@ def fetch_new_works(page, store, work_meta, today):
         return json.loads(path.read_text(encoding="utf-8"))
     return {}
 
+def load_history():
+    path = DATA_DIR / "history.json"
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return {}
+
 def save_history(history):
     DATA_DIR.mkdir(exist_ok=True)
     path = DATA_DIR / "history.json"
