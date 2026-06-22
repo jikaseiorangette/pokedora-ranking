@@ -197,14 +197,13 @@ def fetch_new_works(page, store, work_meta, today):
             work_meta[pid] = {}
         work_meta[pid]["release_date"] = release_date
         work_meta[pid]["title"] = clean_title
+        # 初めて新着一覧で見つけた日を記録（新着判定に使用）
+        if "registered_date" not in work_meta[pid]:
+            work_meta[pid]["registered_date"] = today
         updated += 1
 
     print(f"  発売日確定: {updated}件（累計: {len(work_meta)}件）")
     return work_meta
-    path = DATA_DIR / "history.json"
-    if path.exists():
-        return json.loads(path.read_text(encoding="utf-8"))
-    return {}
 
 def load_history():
     path = DATA_DIR / "history.json"
@@ -628,7 +627,7 @@ def make_preorder_row(w, index):
         </tr>"""
 
 
-def generate_html(ranking, preorders, graph_data, today_str, total_works, new_today):
+def generate_html(ranking, preorders, graph_data, today_str, total_works, new_today, work_meta, today):
     # TOP10のみ表示
     top10 = ranking[:10]
 
@@ -649,7 +648,8 @@ def generate_html(ranking, preorders, graph_data, today_str, total_works, new_to
         pid = w["product_id"]
         prev = prev_map.get(pid, 0)
         rank_change = (prev - w["rank"]) if prev else 0
-        is_new = (pid not in prev_map)
+        # 新着 = 当日新着一覧で初めて登録された作品のみ
+        is_new = work_meta.get(pid, {}).get("registered_date") == today
         ranking_rows.append(make_row(w, rank_change, is_new, f"wc_{i+1}"))
 
     # 近日配信予定セクション
@@ -770,13 +770,15 @@ def run():
     print(f"  graph_{store}.json 保存完了（{len(graph_data)}件）")
     # 統計
     total_works = len(works)
-    new_today = sum(1 for w in works if w["product_id"] not in prev_data)
+    new_today = sum(1 for w in works if work_meta.get(w["product_id"], {}).get("registered_date") == today)
 
     # ranking-hub用：統計情報を単体JSONとして保存
+    new_work_ids = [w["product_id"] for w in works if work_meta.get(w["product_id"], {}).get("registered_date") == today]
     meta = {
         "updated": today_str,
         "total_works": total_works,
         "new_today": new_today,
+        "new_work_ids": new_work_ids,
         "preorder_count": len(preorders),
         "preorders": [
             {
@@ -797,7 +799,7 @@ def run():
     print(f"  meta_{store}.json 保存完了（近日配信予定: {len(preorders)}件）")
 
     # HTML生成
-    html = generate_html(works, preorders, graph_data, today_str, total_works, new_today)
+    html = generate_html(works, preorders, graph_data, today_str, total_works, new_today, work_meta, today)
 
     # docs/index.html に出力（GitHub Pages用）
     docs_dir = Path("docs")
