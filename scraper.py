@@ -432,7 +432,7 @@ $rising_section
             <col style="width:28%">
         </colgroup>
         <thead>
-            <tr><th></th><th>タイトル / 声優</th><th>声優</th><th>推移</th><th class="chart-cell">推移グラフ（30日）</th></tr>
+            <tr><th></th><th>タイトル / 発売日 / ジャンル</th><th>声優</th><th>推移</th><th class="chart-cell">推移グラフ（30日）</th></tr>
         </thead>
         <tbody>
 $ranking_rows
@@ -561,7 +561,7 @@ def make_row(w, rank_change, is_new, canvas_id):
     if release_date:
         date_span = f'<span class="work-date">発売日: {release_date}</span>'
     elif scheduled_date:
-        date_span = f'<span class="work-date">予約開始: {registered_date}</span>' if registered_date else ""
+        date_span = f'<span class="work-date">発売予定日: {scheduled_date}</span>'
     else:
         date_span = ""
     return f"""        <tr>
@@ -687,7 +687,7 @@ def generate_html(ranking, preorders, graph_data, today_str, total_works, new_to
             <col style="width:10%"><col style="width:12%">
         </colgroup>
         <thead>
-            <tr><th></th><th>タイトル / 声優</th><th>声優</th><th>配信予定日</th></tr>
+            <tr><th></th><th>タイトル / 予約開始日 / ジャンル</th><th>声優</th><th>発売予定日</th></tr>
         </thead>
         <tbody>
 {"".join(rows)}
