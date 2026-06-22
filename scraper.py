@@ -170,10 +170,6 @@ def fetch_new_works(page, store, work_meta, today):
             continue
         pid = m.group(1)
 
-        # 既に発売日が確定している場合はスキップ
-        if work_meta.get(pid, {}).get("release_date"):
-            continue
-
         # タイトル取得
         img_el = link.find("img")
         if img_el and img_el.get("alt", "").strip():
@@ -191,14 +187,14 @@ def fetch_new_works(page, store, work_meta, today):
         # 初めて新着一覧で見つけた日を記録（予約開始日）
         if "registered_date" not in work_meta[pid]:
             work_meta[pid]["registered_date"] = today
+            updated += 1
 
-        # タイトルに発売予定日が含まれる場合はscheduled_dateとして記録
+        # タイトルに発売予定日が含まれる場合はscheduled_dateとして記録（上書きしない）
         dm = re.search(r"《?配信開始は(\d{4})年(\d{1,2})月(\d{1,2})日", title_raw)
         if dm and "scheduled_date" not in work_meta[pid]:
             work_meta[pid]["scheduled_date"] = f"{dm.group(1)}-{int(dm.group(2)):02d}-{int(dm.group(3)):02d}"
 
         work_meta[pid]["title"] = clean_title
-        updated += 1
 
     print(f"  発売日確定: {updated}件（累計: {len(work_meta)}件）")
     return work_meta
