@@ -785,7 +785,22 @@ def run():
         registered = meta_entry.get("registered_date", "")
         release = meta_entry.get("release_date", "")
 
-        # 発売予定日を過ぎていれば発売日として確定（ランキング登場有無に関わらず）
+        # 旧形式（release_dateのみ、scheduled_date/registered_dateなし）の場合
+        # タイトルから再解析してscheduled_dateを復元する
+        if release and not scheduled and not registered:
+            dm = re.search(r"《?配信開始は(\d{4})年(\d{1,2})月(\d{1,2})日", w["title"])
+            if dm:
+                # タイトルに配信開始日あり → 旧release_dateは誤り、scheduled_dateとして再設定
+                scheduled = f"{dm.group(1)}-{int(dm.group(2)):02d}-{int(dm.group(3)):02d}"
+                work_meta[pid]["scheduled_date"] = scheduled
+                work_meta[pid]["registered_date"] = release  # 旧release_dateを予約開始日として転用
+                registered = release
+                del work_meta[pid]["release_date"]
+                release = ""
+                print(f"  旧データ移行: {pid} scheduled={scheduled} registered={registered}")
+            # タイトルに配信開始日なし → release_dateはそのまま発売日として正しい
+
+        # 発売予定日を過ぎていれば発売日として確定
         if scheduled and today >= scheduled and not release:
             work_meta[pid]["release_date"] = scheduled
             release = scheduled
@@ -793,19 +808,17 @@ def run():
 
         # 表示用フィールドを設定
         if release:
-            # 発売日確定済み → 発売日を表示
             w["release_date"] = release
             w["scheduled_date"] = ""
             w["registered_date"] = registered
         elif scheduled:
-            # 発売予定日あり → 予約開始日と発売予定日を表示
             w["release_date"] = ""
             w["scheduled_date"] = scheduled
             w["registered_date"] = registered
         else:
-            # 予約なし・日付なし → 今日を発売日として設定
-            if not release:
-                work_meta[pid] = work_meta.get(pid, {})
+            if pid not in work_meta:
+                work_meta[pid] = {}
+            if not work_meta[pid].get("release_date"):
                 work_meta[pid]["release_date"] = today
             w["release_date"] = today
             w["scheduled_date"] = ""
