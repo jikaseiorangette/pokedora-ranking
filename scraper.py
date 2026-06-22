@@ -601,6 +601,12 @@ def make_rising_row(w, rise, canvas_id):
 def extract_preorders(works, work_meta):
     """scheduled_dateが設定されている（発売予定日が未来の）作品を近日配信予定として抽出"""
     preorders = []
+    # デバッグ：scheduled_dateを持つwork_metaエントリを確認
+    scheduled_in_meta = {pid: v for pid, v in work_meta.items() if v.get("scheduled_date")}
+    print(f"  [DEBUG] scheduled_date持ちの作品（work_meta）: {len(scheduled_in_meta)}件")
+    for pid, v in list(scheduled_in_meta.items())[:3]:
+        print(f"    pid={pid} scheduled={v.get('scheduled_date')} registered={v.get('registered_date')}")
+
     for w in works:
         pid = w["product_id"]
         scheduled = w.get("scheduled_date", "") or work_meta.get(pid, {}).get("scheduled_date", "")
