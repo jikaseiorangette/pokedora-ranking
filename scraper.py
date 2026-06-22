@@ -545,8 +545,9 @@ def make_row(w, rank_change, is_new, canvas_id):
     th = thumb_html(w)
     tg = tags_html(w["tags"])
     ch = change_html(rank_change, is_new)
-    # タイトルから《配信開始は...》を除去
     title = re.sub(r'《?配信開始は[^》）]+[》）]?\s*', '', w['title']).strip()
+    release_date = w.get("release_date", "")
+    date_span = f'<span class="work-date">{release_date}</span>' if release_date else ""
     return f"""        <tr>
             <td class="thumb-wrap">
                 <span class="thumb-rank">{rb}</span>
@@ -554,7 +555,7 @@ def make_row(w, rank_change, is_new, canvas_id):
             </td>
             <td class="title-cell">
                 <div class="work-title"><a href="{w['work_url']}" target="_blank" rel="noopener">{title}</a></div>
-                <div class="work-circle">{w['voice_actor']}</div>
+                <div class="work-circle">{date_span}{w['voice_actor']}</div>
                 {tg}
             </td>
             <td style="font-size:11px;color:var(--text-sub)">{w['voice_actor']}</td>
@@ -737,6 +738,8 @@ def run():
         pid = w["product_id"]
         if not w.get("release_date") and work_meta.get(pid, {}).get("release_date"):
             w["release_date"] = work_meta[pid]["release_date"]
+
+    # JSON保存（release_date付き）
 
     # JSON保存
     save_latest(store, works)
