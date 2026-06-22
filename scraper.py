@@ -212,7 +212,6 @@ def save_history(history):
 
 def save_latest(store, works):
     DATA_DIR.mkdir(exist_ok=True)
-    path = DATA_DIR / f"latest_{store}.json"
     # release_date・scheduled_dateを明示的に含めて保存
     output = []
     for w in works:
@@ -230,7 +229,13 @@ def save_latest(store, works):
             "registered_date": w.get("registered_date", ""),
         }
         output.append(entry)
-    path.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_str = json.dumps(output, ensure_ascii=False, indent=2)
+    # data/（履歴保持用）
+    (DATA_DIR / f"latest_{store}.json").write_text(json_str, encoding="utf-8")
+    # docs/data/（GitHub Pages配信用）
+    docs_data_dir = Path("docs") / "data"
+    docs_data_dir.mkdir(parents=True, exist_ok=True)
+    (docs_data_dir / f"latest_{store}.json").write_text(json_str, encoding="utf-8")
 
 def update_history(history, store, today, works):
     """historyにその日のランキングを記録（product_id: rank の辞書形式）
