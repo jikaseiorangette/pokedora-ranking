@@ -131,7 +131,76 @@ def fetch_ranking(page, store, url):
 
 DATA_DIR = Path("data")
 
-def load_history():
+def load_work_meta():
+    """作品メタデータ（発売日など）を読み込む"""
+    path = DATA_DIR / "work_meta.json"
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return {}
+
+def save_work_meta(work_meta):
+    DATA_DIR.mkdir(exist_ok=True)
+    path = DATA_DIR / "work_meta.json"
+    path.write_text(json.dumps(work_meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def fetch_new_works(page, store, work_meta, today):
+    """
+    新着一覧ページから新作を取得し、発売日をwork_metaに蓄積する。
+    ルール：
+    1. タイトルに「配信開始は〇年〇月〇日」 → その日付を発売日として記録
+    2. タイトルに日付がなし → 今日を発売日として記録
+    3. 既に発売日が記録済みの作品 → 上書きしない
+    """
+    url = f"https://pokedora.com/products/list.php?order=1&store={store}"
+    print(f"  新着一覧取得中: {url}")
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        time.sleep(5)
+    except Exception as e:
+        print(f"  新着ページアクセス失敗: {e}")
+        return work_meta
+
+    soup = BeautifulSoup(page.content(), "html.parser")
+    updated = 0
+
+    for link in soup.select("a[href*='/products/detail.php']"):
+        href = link.get("href", "")
+        m = re.search(r"product_id=(\d+)", href)
+        if not m:
+            continue
+        pid = m.group(1)
+
+        # 既に発売日が確定している場合はスキップ
+        if work_meta.get(pid, {}).get("release_date"):
+            continue
+
+        # タイトル取得
+        img_el = link.find("img")
+        if img_el and img_el.get("alt", "").strip():
+            title_raw = img_el.get("alt", "").strip()
+        else:
+            title_raw = link.get_text(separator=" ").strip()
+        if not title_raw or len(title_raw) < 2:
+            continue
+
+        # 発売日を解決
+        release_date = ""
+        dm = re.search(r"《?配信開始は(\d{4})年(\d{1,2})月(\d{1,2})日", title_raw)
+        if dm:
+            release_date = f"{dm.group(1)}-{int(dm.group(2)):02d}-{int(dm.group(3)):02d}"
+        else:
+            release_date = today  # 日付なし = 今日が発売日
+
+        clean_title = re.sub(r"《?配信開始は[^》）]+[》）]?\s*", "", title_raw).strip()
+
+        if pid not in work_meta:
+            work_meta[pid] = {}
+        work_meta[pid]["release_date"] = release_date
+        work_meta[pid]["title"] = clean_title
+        updated += 1
+
+    print(f"  発売日確定: {updated}件（累計: {len(work_meta)}件）")
+    return work_meta
     path = DATA_DIR / "history.json"
     if path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
@@ -626,6 +695,18 @@ def run():
 
     history = load_history()
 
+    # 新着一覧から発売日を先に取得・蓄積（ランキング作品への付与に使うため先行実行）
+    work_meta = load_work_meta()
+    with sync_playwright() as p_new:
+        browser_new = p_new.chromium.launch()
+        page_new = browser_new.new_page(user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ))
+        work_meta = fetch_new_works(page_new, store, work_meta, today)
+        browser_new.close()
+    save_work_meta(work_meta)
+
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(user_agent=(
@@ -644,6 +725,12 @@ def run():
     if not works:
         print("取得データなし・終了")
         return
+
+    # ランキング作品にwork_metaから発売日を付与
+    for w in works:
+        pid = w["product_id"]
+        if not w.get("release_date") and work_meta.get(pid, {}).get("release_date"):
+            w["release_date"] = work_meta[pid]["release_date"]
 
     # JSON保存
     save_latest(store, works)
