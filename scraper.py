@@ -188,6 +188,10 @@ def fetch_new_works(page, store, work_meta, today):
         if "registered_date" not in work_meta[pid]:
             work_meta[pid]["registered_date"] = today
             updated += 1
+            # 発売予定日がない新作は今日が発売日
+            dm = re.search(r"《?配信開始は(\d{4})年(\d{1,2})月(\d{1,2})日", title_raw)
+            if not dm and "release_date" not in work_meta[pid]:
+                work_meta[pid]["release_date"] = today
 
         # タイトルに発売予定日が含まれる場合はscheduled_dateとして記録（上書きしない）
         dm = re.search(r"《?配信開始は(\d{4})年(\d{1,2})月(\d{1,2})日", title_raw)
@@ -816,11 +820,8 @@ def run():
             w["scheduled_date"] = scheduled
             w["registered_date"] = registered
         else:
-            if pid not in work_meta:
-                work_meta[pid] = {}
-            if not work_meta[pid].get("release_date"):
-                work_meta[pid]["release_date"] = today
-            w["release_date"] = today
+            # 発売日・発売予定日ともに不明 → 表示しない（勝手に確定させない）
+            w["release_date"] = ""
             w["scheduled_date"] = ""
             w["registered_date"] = registered
 
