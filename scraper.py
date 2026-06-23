@@ -1,12 +1,17 @@
 # scraper.py
+
 # ポケドラのランキングをスクレイプし、JSONと静的HTMLを生成する
 
 from playwright.sync_api import sync_playwright
+
 from bs4 import BeautifulSoup
+
 import json
 import os
 import re
 import time
+import csv as csv_module
+import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -16,10 +21,10 @@ def now_jst():
     return datetime.now(JST)
 
 CATEGORIES = {
-    "adt":    ("オトナ向け", "https://pokedora.com/ranking/index.php?store=adt&term=1&age_check=1"),
-    "adt-bl": ("オトナBL",   "https://pokedora.com/ranking/index.php?store=adt-bl&term=1&age_check=1"),
-    "home":   ("一般",       "https://pokedora.com/ranking/index.php?store=home&term=1"),
-    "bl":     ("BL",         "https://pokedora.com/ranking/index.php?store=bl&term=1"),
+    "adt": ("オトナ向け", "https://pokedora.com/ranking/index.php?store=adt&term=1&age_check=1"),
+    "adt-bl": ("オトナBL", "https://pokedora.com/ranking/index.php?store=adt-bl&term=1&age_check=1"),
+    "home": ("一般", "https://pokedora.com/ranking/index.php?store=home&term=1"),
+    "bl": ("BL", "https://pokedora.com/ranking/index.php?store=bl&term=1"),
 }
 
 # ----------------------------------------
@@ -27,79 +32,57 @@ CATEGORIES = {
 # ----------------------------------------
 
 def fetch_ranking(page, store, url):
-    print(f"  [{store}] アクセス中: {url}")
+    print(f" [{store}] アクセス中: {url}")
     for attempt in range(3):
         try:
-            # networkidleは常時通信があるサイトでタイムアウトしやすいため
-            # domcontentloadedに変更し、タイムアウトも延長
             page.goto(url, wait_until="domcontentloaded", timeout=90000)
             break
         except Exception as e:
-            print(f"  失敗({attempt+1}/3): {e}")
+            print(f" 失敗({attempt+1}/3): {e}")
             if attempt < 2:
                 time.sleep(10)
             else:
                 raise
-    # JS描画完了まで待機（ランキングリストはJS描画のため長めに）
+
     time.sleep(10)
 
-    # ===== デバッグ情報出力 =====
-    print(f"  [DEBUG] 現在のURL: {page.url}")
-    print(f"  [DEBUG] ページタイトル: {page.title()}")
-
     soup = BeautifulSoup(page.content(), "html.parser")
-
-    # 年齢確認ページに留まっていないか簡易チェック
-    page_text = soup.get_text()
-    if "18歳未満" in page_text or "年齢確認" in page_text:
-        print("  [DEBUG] ⚠️ 年齢確認ページに留まっている可能性があります")
-        for el in soup.select("a, button"):
-            t = el.get_text(strip=True)
-            if t in ("はい", "はい、18歳以上です", "ENTER", "Yes", "18歳以上"):
-                print(f"  [DEBUG] 年齢確認ボタン候補発見: <{el.name}> text='{t}' href='{el.get('href','')}'")
-
-    n_product_id_links = len(soup.select("a[href*='product_id']"))
-    n_thumb_imgs = len(soup.select("img.product_thumb_image"))
-    print(f"  [DEBUG] product_id を含むリンク数: {n_product_id_links}")
-    print(f"  [DEBUG] img.product_thumb_image の件数: {n_thumb_imgs}")
 
     works = []
     seen = set()
 
-    # 元の実績あるセレクタに戻す：a[href*='/products/detail.php']
-    # タイトルはリンク内imgのalt属性から取得（以前はget_text()で空になっていた）
     for link in soup.select("a[href*='/products/detail.php']"):
         if len(works) >= 30:
             break
+
         href = link.get("href", "")
         m = re.search(r'product_id=(\d+)', href)
         if not m:
             continue
+
         pid = m.group(1)
         if pid in seen:
             continue
 
-        # タイトル：リンク内imgのalt属性を優先
         img_el = link.find("img")
         if img_el and img_el.get("alt", "").strip():
             title = img_el.get("alt", "").strip()
         else:
             title = link.get_text(separator=" ").strip()
-        title = re.sub(r'\s+', ' ', title)
+            title = re.sub(r'\s+', ' ', title)
+
         if not title or len(title) < 2:
             continue
 
         seen.add(pid)
         work_url = href if href.startswith("http") else f"https://pokedora.com{href}"
 
-        # サムネイル
         thumb_url = ""
         if img_el:
             src = img_el.get("src", "")
             if src and "nowprinting" not in src:
                 thumb_url = src if src.startswith("http") else f"https://pokedora.com{src}"
 
-        # 声優・タグは親のli/divから
         container = link.find_parent("li") or link.find_parent("div")
         voice_actor = ""
         tags = []
@@ -112,17 +95,17 @@ def fetch_ranking(page, store, url):
                     tags.append(tc)
 
         works.append({
-            "rank":        len(works) + 1,
-            "product_id":  pid,
-            "title":       title,
+            "rank": len(works) + 1,
+            "product_id": pid,
+            "title": title,
             "voice_actor": voice_actor,
-            "tags":        tags,
-            "thumb_url":   thumb_url,
-            "work_url":    work_url,
+            "tags": tags,
+            "thumb_url": thumb_url,
+            "work_url": work_url,
         })
-        print(f"    {len(works)}位: {title[:40]}")
+        print(f" {len(works)}位: {title[:40]}")
 
-    print(f"  [{store}] {len(works)}件取得")
+    print(f" [{store}] {len(works)}件取得")
     return works
 
 # ----------------------------------------
@@ -132,7 +115,6 @@ def fetch_ranking(page, store, url):
 DATA_DIR = Path("data")
 
 def load_work_meta():
-    """作品メタデータ（発売日など）を読み込む"""
     path = DATA_DIR / "work_meta.json"
     if path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
@@ -152,12 +134,12 @@ def fetch_new_works(page, store, work_meta, today):
     3. 既に発売日が記録済みの作品 → 上書きしない
     """
     url = f"https://pokedora.com/products/list.php?order=1&store={store}"
-    print(f"  新着一覧取得中: {url}")
+    print(f" 新着一覧取得中: {url}")
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
         time.sleep(5)
     except Exception as e:
-        print(f"  新着ページアクセス失敗: {e}")
+        print(f" 新着ページアクセス失敗: {e}")
         return work_meta
 
     soup = BeautifulSoup(page.content(), "html.parser")
@@ -170,7 +152,6 @@ def fetch_new_works(page, store, work_meta, today):
             continue
         pid = m.group(1)
 
-        # タイトル取得
         img_el = link.find("img")
         if img_el and img_el.get("alt", "").strip():
             title_raw = img_el.get("alt", "").strip()
@@ -184,23 +165,21 @@ def fetch_new_works(page, store, work_meta, today):
         if pid not in work_meta:
             work_meta[pid] = {}
 
-        # 初めて新着一覧で見つけた日を記録（予約開始日）
         if "registered_date" not in work_meta[pid]:
             work_meta[pid]["registered_date"] = today
             updated += 1
-            # 発売予定日がない新作は今日が発売日
-            dm = re.search(r"《?配信開始は(\d{4})年(\d{1,2})月(\d{1,2})日", title_raw)
-            if not dm and "release_date" not in work_meta[pid]:
-                work_meta[pid]["release_date"] = today
 
-        # タイトルに発売予定日が含まれる場合はscheduled_dateとして記録（上書きしない）
+        dm = re.search(r"《?配信開始は(\d{4})年(\d{1,2})月(\d{1,2})日", title_raw)
+        if not dm and "release_date" not in work_meta[pid]:
+            work_meta[pid]["release_date"] = today
+
         dm = re.search(r"《?配信開始は(\d{4})年(\d{1,2})月(\d{1,2})日", title_raw)
         if dm and "scheduled_date" not in work_meta[pid]:
             work_meta[pid]["scheduled_date"] = f"{dm.group(1)}-{int(dm.group(2)):02d}-{int(dm.group(3)):02d}"
 
         work_meta[pid]["title"] = clean_title
 
-    print(f"  発売日確定: {updated}件（累計: {len(work_meta)}件）")
+    print(f" 発売日確定: {updated}件（累計: {len(work_meta)}件）")
     return work_meta
 
 def load_history():
@@ -216,7 +195,6 @@ def save_history(history):
 
 def save_latest(store, works):
     DATA_DIR.mkdir(exist_ok=True)
-    # release_date・scheduled_dateを明示的に含めて保存
     output = []
     for w in works:
         entry = {
@@ -234,40 +212,134 @@ def save_latest(store, works):
         }
         output.append(entry)
     json_str = json.dumps(output, ensure_ascii=False, indent=2)
-    # data/（履歴保持用）
+
     (DATA_DIR / f"latest_{store}.json").write_text(json_str, encoding="utf-8")
-    # docs/data/（GitHub Pages配信用）
+
     docs_data_dir = Path("docs") / "data"
     docs_data_dir.mkdir(parents=True, exist_ok=True)
     (docs_data_dir / f"latest_{store}.json").write_text(json_str, encoding="utf-8")
 
 def update_history(history, store, today, works):
-    """historyにその日のランキングを記録（product_id: rank の辞書形式）
-    過去に記録された作品が今日ランキング外なら31（圏外）として記録する"""
     if store not in history:
         history[store] = {}
 
     today_ranked = {w["product_id"]: w["rank"] for w in works}
 
-    # 過去に追跡していた全product_idを収集
     all_tracked_pids = set()
     for day_data in history[store].values():
         all_tracked_pids.update(day_data.keys())
 
-    # 今日のデータ：ランキング入りは実rank、圏外は31
     today_data = {}
     for pid in all_tracked_pids:
-        today_data[pid] = today_ranked.get(pid, 31)  # 31 = 圏外
-    # 今日新たにランクインした作品も追加
+        today_data[pid] = today_ranked.get(pid, 31)
     for pid, rank in today_ranked.items():
         today_data[pid] = rank
 
     history[store][today] = today_data
 
-    # 90日以上前のデータを削除
     cutoff = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=90)).strftime("%Y-%m-%d")
     history[store] = {d: v for d, v in history[store].items() if d >= cutoff}
+
     return history
+
+# ----------------------------------------
+# all_works.csv（全作品マスター）管理
+# ----------------------------------------
+
+ALL_WORKS_CSV = DATA_DIR / "all_works.csv"
+ALL_WORKS_CSV_DOCS = Path("docs") / "data" / "all_works.csv"
+
+CSV_FIELDNAMES = [
+    "product_id", "タイトル", "商品種別", "出演声優", "シリーズ", "レーベル",
+    "セール価格", "通常価格", "割引率", "割引中", "NEW", "関連ワード",
+    "収録数", "収録内容", "商品URL", "出演声優_詳細", "商品種別_詳細", "発売日"
+]
+
+def load_all_works_pids():
+    """all_works.csv に登録済みのproduct_idセットを返す"""
+    if not ALL_WORKS_CSV.exists():
+        return set()
+    with ALL_WORKS_CSV.open(encoding="utf-8-sig") as f:
+        reader = csv_module.DictReader(f)
+        return {row["product_id"] for row in reader}
+
+def get_all_works_count():
+    """all_works.csv の総件数を返す"""
+    if not ALL_WORKS_CSV.exists():
+        return 0
+    with ALL_WORKS_CSV.open(encoding="utf-8-sig") as f:
+        return sum(1 for _ in csv_module.DictReader(f))
+
+def append_new_works_to_csv(new_pids, work_meta, ranking_works):
+    """
+    new_pids: 今日新たにwork_metaに登録され、かつCSV未登録のpidセット
+    work_meta: 最新のwork_meta辞書
+    ranking_works: 当日ランキングのworks（タイトル・声優・タグ情報の補完に使用）
+    発売日ロジック: fetch_new_works()が設定したscheduled_date or release_dateをそのまま使う
+    """
+    if not new_pids:
+        print(" all_works.csv: 新規追加なし")
+        return
+
+    ranking_map = {w["product_id"]: w for w in ranking_works}
+    rows_to_add = []
+
+    for pid in sorted(new_pids, reverse=True):  # 新しいIDが先頭になるよう降順
+        meta = work_meta.get(pid, {})
+        w = ranking_map.get(pid, {})
+
+        title = meta.get("title") or w.get("title", "")
+        voice = w.get("voice_actor", "")
+        tags = w.get("tags", [])
+        tag_str = " ".join(tags)
+
+        # 発売日：fetch_new_works()が設定したscheduled_date or release_dateをそのまま使う
+        scheduled = meta.get("scheduled_date", "")
+        release = meta.get("release_date", "")
+        display_date = scheduled if scheduled else release
+
+        # 商品種別：タグからシチュエーション系を抽出
+        genre = ""
+        for tag in tags:
+            if "シチュエーション" in tag or "ドラマCD" in tag:
+                genre = tag
+                break
+
+        row = {
+            "product_id": pid,
+            "タイトル": title,
+            "商品種別": genre,
+            "出演声優": voice,
+            "シリーズ": "",
+            "レーベル": "",
+            "セール価格": "",
+            "通常価格": "",
+            "割引率": "",
+            "割引中": "True" if "割引" in tag_str else "False",
+            "NEW": "True",
+            "関連ワード": tag_str,
+            "収録数": "",
+            "収録内容": "",
+            "商品URL": w.get("work_url", f"https://pokedora.com/products/detail.php?product_id={pid}"),
+            "出演声優_詳細": voice,
+            "商品種別_詳細": genre,
+            "発売日": display_date,
+        }
+        rows_to_add.append(row)
+
+    ALL_WORKS_CSV.parent.mkdir(exist_ok=True)
+    write_header = not ALL_WORKS_CSV.exists()
+    with ALL_WORKS_CSV.open("a", encoding="utf-8-sig", newline="") as f:
+        writer = csv_module.DictWriter(f, fieldnames=CSV_FIELDNAMES)
+        if write_header:
+            writer.writeheader()
+        writer.writerows(rows_to_add)
+
+    # docs/data/ にもコピー（GitHub Pages配信用）
+    ALL_WORKS_CSV_DOCS.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ALL_WORKS_CSV, ALL_WORKS_CSV_DOCS)
+
+    print(f" all_works.csv に {len(rows_to_add)}件追記（累計: {get_all_works_count()}件）")
 
 # ----------------------------------------
 # グラフデータ生成（30日分）
@@ -276,11 +348,12 @@ def update_history(history, store, today, works):
 def build_graph_data(history, store, product_ids, today):
     today_dt = datetime.strptime(today, "%Y-%m-%d")
     dates = [(today_dt - timedelta(days=29 - i)).strftime("%Y-%m-%d") for i in range(30)]
+
     store_history = history.get(store, {})
+
     graph = {}
     for pid in product_ids:
         ranks = []
-        # この作品が最初に記録された日付を取得
         first_date = None
         for d in dates:
             if pid in store_history.get(d, {}):
@@ -292,12 +365,12 @@ def build_graph_data(history, store, product_ids, today):
             if pid in day_data:
                 ranks.append(day_data[pid])
             elif first_date and d > first_date:
-                # 追跡開始後でデータなし = 圏外(31)
                 ranks.append(31)
             else:
-                # 追跡開始前 = 空白（グラフに表示しない）
                 ranks.append(None)
+
         graph[pid] = {"labels": dates, "ranks": ranks}
+
     return graph
 
 # ----------------------------------------
@@ -314,10 +387,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{
-    --rose-50:#fff1f4;--rose-100:#fde0e7;--rose-600:#d4386f;
-    --rose-800:#8b1a42;--mauve-50:#fdf4f8;
-    --text-main:#3a1628;--text-sub:#8b4f6a;--text-muted:#b8829a;
-    --border:#f0c4d8;--border-light:#fae0ec;
+--rose-50:#fff1f4;--rose-100:#fde0e7;--rose-600:#d4386f;
+--rose-800:#8b1a42;--mauve-50:#fdf4f8;
+--text-main:#3a1628;--text-sub:#8b4f6a;--text-muted:#b8829a;
+--border:#f0c4d8;--border-light:#fae0ec;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Noto Sans JP',sans-serif;background:var(--rose-50);color:var(--text-main);min-height:100vh}
@@ -372,173 +445,165 @@ tbody tr:hover td{background:var(--rose-50)}
 .empty-msg{text-align:center;padding:20px;color:var(--text-muted);font-size:12px}
 .footer{text-align:center;margin-top:40px;font-size:11px;color:var(--text-muted);padding-top:20px;border-top:0.5px solid var(--border-light)}
 @media (max-width:640px){
-    .site-wrap{padding:10px 8px 40px}
-    .header{padding:10px 12px;gap:8px;flex-wrap:wrap}
-    .header-title{font-size:13px}
-    .header-sub{font-size:10px}
-    .header-update{font-size:9px;padding:3px 8px;margin-left:0;width:100%}
-    .stat-row{grid-template-columns:repeat(3,1fr);gap:5px}
-    .stat-card{padding:8px 6px}
-    .stat-value{font-size:18px}
-    .stat-label{font-size:8px}
-    .stat-sub{font-size:7px}
-    .table-card{overflow:visible}
-    table{display:block}
-    thead{display:none}
-    tbody{display:flex;flex-direction:column;gap:6px;padding:6px}
-    tbody tr{display:grid;grid-template-columns:110px 1fr;grid-template-rows:auto auto auto;background:#fff;border:0.5px solid var(--border);border-radius:10px;overflow:hidden;padding:0}
-    tbody td{border-bottom:none;padding:0;width:auto !important}
-    tbody tr:hover td{background:transparent}
-    .thumb-wrap{grid-column:1;grid-row:1/4;width:110px !important;min-width:110px;padding:6px 4px 6px 6px;position:relative}
-    .thumb-wrap img{width:100px;height:75px;border-radius:6px;border:0.5px solid var(--border-light);display:block;object-fit:cover}
-    .thumb-rank{top:9px;left:9px}
-    .title-cell{grid-column:2;grid-row:1;padding:6px 8px 2px 4px !important;display:block}
-    .work-title{font-size:11px;white-space:normal;line-height:1.3}
-    .work-circle{font-size:9px;margin-top:1px}
-    .genres{margin-top:3px;gap:2px}
-    .gtag{font-size:8px;padding:1px 4px}
-    .chart-cell{grid-column:1/3;grid-row:4;width:100% !important}
-    .chart-wrap{height:72px;padding:0 4px 6px;display:block}
-    .section-title{font-size:13px}
-    .section-badge,.section-badge-new{font-size:9px}
-    .section{margin-bottom:20px}
-    .section-head{margin-bottom:6px}
+.site-wrap{padding:10px 8px 40px}
+.header{padding:10px 12px;gap:8px;flex-wrap:wrap}
+.header-title{font-size:13px}
+.header-sub{font-size:10px}
+.header-update{font-size:9px;padding:3px 8px;margin-left:0;width:100%}
+.stat-row{grid-template-columns:repeat(3,1fr);gap:5px}
+.stat-card{padding:8px 6px}
+.stat-value{font-size:18px}
+.stat-label{font-size:8px}
+.stat-sub{font-size:7px}
+.table-card{overflow:visible}
+table{display:block}
+thead{display:none}
+tbody{display:flex;flex-direction:column;gap:6px;padding:6px}
+tbody tr{display:grid;grid-template-columns:110px 1fr;grid-template-rows:auto auto auto;background:#fff;border:0.5px solid var(--border);border-radius:10px;overflow:hidden;padding:0}
+tbody td{border-bottom:none;padding:0;width:auto !important}
+tbody tr:hover td{background:transparent}
+.thumb-wrap{grid-column:1;grid-row:1/4;width:110px !important;min-width:110px;padding:6px 4px 6px 6px;position:relative}
+.thumb-wrap img{width:100px;height:75px;border-radius:6px;border:0.5px solid var(--border-light);display:block;object-fit:cover}
+.thumb-rank{top:9px;left:9px}
+.title-cell{grid-column:2;grid-row:1;padding:6px 8px 2px 4px !important;display:block}
+.work-title{font-size:11px;white-space:normal;line-height:1.3}
+.work-circle{font-size:9px;margin-top:1px}
+.genres{margin-top:3px;gap:2px}
+.gtag{font-size:8px;padding:1px 4px}
+.chart-cell{grid-column:1/3;grid-row:4;width:100% !important}
+.chart-wrap{height:72px;padding:0 4px 6px;display:block}
+.section-title{font-size:13px}
+.section-badge,.section-badge-new{font-size:9px}
+.section{margin-bottom:20px}
+.section-head{margin-bottom:6px}
 }
 </style>
 </head>
 <body>
 <div class="site-wrap">
-
 <div class="header">
-    <div class="header-icon">🎧</div>
-    <div>
-        <div class="header-title">ポケドラ ランキング分析</div>
-        <div class="header-sub">ドラマCD人気作品データ</div>
-    </div>
-    <div class="header-update">🔄 毎日23:30頃更新 ／ $today_str</div>
+<div class="header-icon">🎧</div>
+<div>
+<div class="header-title">ポケドラ ランキング分析</div>
+<div class="header-sub">ドラマCD人気作品データ</div>
 </div>
-
+<div class="header-update">🔄 毎日23:30頃更新 ／ $today_str</div>
+</div>
 <div class="stat-row">
-    <div class="stat-card">
-        <div class="stat-label">📦 収録作品数</div>
-        <div class="stat-value">$total_works</div>
-        <div class="stat-sub">オトナ向けランキング</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">✨ 新着</div>
-        <div class="stat-value">$new_today</div>
-        <div class="stat-sub">$today_str</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">🔔 近日配信予定</div>
-        <div class="stat-value">$rising_count</div>
-        <div class="stat-sub">配信開始前の作品</div>
-    </div>
+<div class="stat-card">
+<div class="stat-label">📦 収録作品数</div>
+<div class="stat-value">$total_works</div>
+<div class="stat-sub">オトナ向け全作品</div>
 </div>
-
+<div class="stat-card">
+<div class="stat-label">✨ 新着</div>
+<div class="stat-value">$new_today</div>
+<div class="stat-sub">$today_str</div>
+</div>
+<div class="stat-card">
+<div class="stat-label">🔔 近日配信予定</div>
+<div class="stat-value">$rising_count</div>
+<div class="stat-sub">配信開始前の作品</div>
+</div>
+</div>
 $rising_section
-
 <div class="section">
-    <div class="section-head">
-        <span style="font-size:16px">🏆</span>
-        <span class="section-title">本日のランキング</span>
-        <span class="section-badge">TOP 10</span>
-    </div>
-    <div class="table-card">
-    <table>
-        <colgroup>
-            <col style="width:150px">
-            <col style="width:auto">
-            <col style="width:10%">
-            <col style="width:7%">
-            <col style="width:28%">
-        </colgroup>
-        <thead>
-            <tr><th></th><th>タイトル / 発売日 / ジャンル</th><th>声優</th><th>推移</th><th class="chart-cell">推移グラフ（30日）</th></tr>
-        </thead>
-        <tbody>
+<div class="section-head">
+<span style="font-size:16px">🏆</span>
+<span class="section-title">本日のランキング</span>
+<span class="section-badge">TOP 10</span>
+</div>
+<div class="table-card">
+<table>
+<colgroup>
+<col style="width:150px">
+<col style="width:auto">
+<col style="width:10%">
+<col style="width:7%">
+<col style="width:28%">
+</colgroup>
+<thead>
+<tr><th></th><th>タイトル / 発売日 / ジャンル</th><th>声優</th><th>推移</th><th class="chart-cell">推移グラフ（30日）</th></tr>
+</thead>
+<tbody>
 $ranking_rows
-        </tbody>
-    </table>
-    </div>
+</tbody>
+</table>
 </div>
-
+</div>
 <div class="footer">
-    ポケドラ ランキング分析 ／ データは毎日23:30頃に自動更新されます<br>
-    ※ 本サイトはポケットドラマCD（ポケドラ）のデータを使用しています
+ポケドラ ランキング分析 ／ データは毎日23:30頃に自動更新されます<br>
+※ 本サイトはポケットドラマCD（ポケドラ）のデータを使用しています
 </div>
-
 </div>
 <script>
 const graphData = $graph_data_json;
 const PINK = '#e8528a';
-
 function drawChart(canvasId, pid) {{
-    const ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-    const d = graphData[pid];
-    if (!d) {{ ctx.parentElement.innerHTML = '<span class="no-data">データ蓄積中</span>'; return; }}
-    const disp = d.ranks.map(v => (v === null || v === undefined) ? null : (v > 14 ? 15 : v));
-    const isSingle = d.ranks.filter(v => v !== null).length === 1;
-    new Chart(ctx, {{
-        type: 'line',
-        data: {{
-            labels: d.labels,
-            datasets: [{{
-                data: disp,
-                borderColor: PINK,
-                backgroundColor: 'transparent',
-                borderWidth: 1.5,
-                pointRadius: isSingle ? 5 : 2,
-                pointHoverRadius: 6,
-                pointBackgroundColor: PINK,
-                fill: false,
-                tension: 0.4,
-                spanGaps: false,
-            }}]
-        }},
-        options: {{
-            responsive: true,
-            maintainAspectRatio: false,
-            layout: {{ padding: {{ top: 6, left: 2 }} }},
-            interaction: {{ mode: 'index', intersect: false }},
-            scales: {{
-                y: {{
-                    reverse: true, min: -1, max: 17,
-                    ticks: {{
-                        font: {{ size: 11 }}, color: '#b8829a',
-                        callback: v => v===1?'1位':v===5?'5位':v===10?'10位':v===15?'圏外':null
-                    }},
-                    beforeFit: axis => {{
-                        axis.ticks = [{{value:1,label:'1位'}},{{value:5,label:'5位'}},{{value:10,label:'10位'}},{{value:15,label:'圏外'}}];
-                    }},
-                    grid: {{ color: 'rgba(232,82,138,0.07)' }},
-                    border: {{ display: false }}
-                }},
-                x: {{
-                    ticks: {{ font: {{ size: 9 }}, color: '#b8829a', maxTicksLimit: 4 }},
-                    grid: {{ display: false }}, border: {{ display: false }}
-                }}
-            }},
-            plugins: {{
-                legend: {{ display: false }},
-                tooltip: {{
-                    callbacks: {{
-                        label: c => {{
-                            const raw = d.ranks[c.dataIndex];
-                            if (raw === null || raw === undefined) return '';
-                            return raw > 30 ? '圏外' : raw + '位';
-                        }}
-                    }},
-                    titleFont: {{ size: 11 }}, bodyFont: {{ size: 12 }}, padding: 8,
-                    backgroundColor: 'rgba(139,26,66,0.85)',
-                    titleColor: '#fde0e7', bodyColor: '#fff',
-                }}
-            }}
-        }}
-    }});
+const ctx = document.getElementById(canvasId);
+if (!ctx) return;
+const d = graphData[pid];
+if (!d) {{ ctx.parentElement.innerHTML = '<span class="no-data">データ蓄積中</span>'; return; }}
+const disp = d.ranks.map(v => (v === null || v === undefined) ? null : (v > 14 ? 15 : v));
+const isSingle = d.ranks.filter(v => v !== null).length === 1;
+new Chart(ctx, {{
+type: 'line',
+data: {{
+labels: d.labels,
+datasets: [{{
+data: disp,
+borderColor: PINK,
+backgroundColor: 'transparent',
+borderWidth: 1.5,
+pointRadius: isSingle ? 5 : 2,
+pointHoverRadius: 6,
+pointBackgroundColor: PINK,
+fill: false,
+tension: 0.4,
+spanGaps: false,
+}}]
+}},
+options: {{
+responsive: true,
+maintainAspectRatio: false,
+layout: {{ padding: {{ top: 6, left: 2 }} }},
+interaction: {{ mode: 'index', intersect: false }},
+scales: {{
+y: {{
+reverse: true, min: -1, max: 17,
+ticks: {{
+font: {{ size: 11 }}, color: '#b8829a',
+callback: v => v===1?'1位':v===5?'5位':v===10?'10位':v===15?'圏外':null
+}},
+beforeFit: axis => {{
+axis.ticks = [{{value:1,label:'1位'}},{{value:5,label:'5位'}},{{value:10,label:'10位'}},{{value:15,label:'圏外'}}];
+}},
+grid: {{ color: 'rgba(232,82,138,0.07)' }},
+border: {{ display: false }}
+}},
+x: {{
+ticks: {{ font: {{ size: 9 }}, color: '#b8829a', maxTicksLimit: 4 }},
+grid: {{ display: false }}, border: {{ display: false }}
 }}
-
+}},
+plugins: {{
+legend: {{ display: false }},
+tooltip: {{
+callbacks: {{
+label: c => {{
+const raw = d.ranks[c.dataIndex];
+if (raw === null || raw === undefined) return '';
+return raw > 30 ? '圏外' : raw + '位';
+}}
+}},
+titleFont: {{ size: 11 }}, bodyFont: {{ size: 12 }}, padding: 8,
+backgroundColor: 'rgba(139,26,66,0.85)',
+titleColor: '#fde0e7', bodyColor: '#fff',
+}}
+}}
+}}
+}});
+}}
 document.querySelectorAll('canvas[data-pid]').forEach(c => drawChart(c.id, c.dataset.pid));
 </script>
 </body>
@@ -576,59 +641,53 @@ def make_row(w, rank_change, is_new, canvas_id):
     tg = tags_html(w["tags"])
     ch = change_html(rank_change, is_new)
     title = re.sub(r'《?配信開始は[^》）]+[》）]?\s*', '', w['title']).strip()
-    # 発売日確定済みなら「発売日」、発売予定日があれば「予約開始」で表示
+
     release_date = w.get("release_date", "")
     scheduled_date = w.get("scheduled_date", "")
-    registered_date = w.get("registered_date", "")
     if release_date:
         date_span = f'<span class="work-date">発売日: {release_date}</span>'
     elif scheduled_date:
         date_span = f'<span class="work-date">発売予定日: {scheduled_date}</span>'
     else:
         date_span = ""
-    return f"""        <tr>
-            <td class="thumb-wrap">
-                <span class="thumb-rank">{rb}</span>
-                <a href="{w['work_url']}" target="_blank" rel="noopener">{th}</a>
-            </td>
-            <td class="title-cell">
-                <div class="work-title"><a href="{w['work_url']}" target="_blank" rel="noopener">{title}</a></div>
-                <div class="work-circle">{date_span}{w['voice_actor']}</div>
-                {tg}
-            </td>
-            <td style="font-size:11px;color:var(--text-sub)">{w['voice_actor']}</td>
-            <td>{ch}</td>
-            <td class="chart-cell"><canvas id="{canvas_id}" class="chart-wrap" data-pid="{w['product_id']}"></canvas></td>
-        </tr>"""
+
+    return f""" <tr>
+  <td class="thumb-wrap">
+    <span class="thumb-rank">{rb}</span>
+    <a href="{w['work_url']}" target="_blank" rel="noopener">{th}</a>
+  </td>
+  <td class="title-cell">
+    <div class="work-title"><a href="{w['work_url']}" target="_blank" rel="noopener">{title}</a></div>
+    <div class="work-circle">{date_span}{w['voice_actor']}</div>
+    {tg}
+  </td>
+  <td style="font-size:11px;color:var(--text-sub)">{w['voice_actor']}</td>
+  <td>{ch}</td>
+  <td class="chart-cell"><canvas id="{canvas_id}" class="chart-wrap" data-pid="{w['product_id']}"></canvas></td>
+</tr>"""
 
 def make_rising_row(w, rise, canvas_id):
     rb = rank_badge(w["rank"])
     th = thumb_html(w)
     tg = tags_html(w["tags"])
-    return f"""        <tr>
-            <td class="thumb-wrap">
-                <span class="thumb-rank">{rb}</span>
-                <a href="{w['work_url']}" target="_blank" rel="noopener">{th}</a>
-            </td>
-            <td class="title-cell">
-                <div class="work-title"><a href="{w['work_url']}" target="_blank" rel="noopener">{w['title']}</a></div>
-                <div class="work-circle">{w['voice_actor']}</div>
-                {tg}
-            </td>
-            <td style="font-size:11px;color:var(--text-sub)">{w['voice_actor']}</td>
-            <td><span class="rise-pill">▲{rise}位UP</span></td>
-            <td class="chart-cell"><canvas id="{canvas_id}" class="chart-wrap" data-pid="{w['product_id']}"></canvas></td>
-        </tr>"""
+    return f""" <tr>
+  <td class="thumb-wrap">
+    <span class="thumb-rank">{rb}</span>
+    <a href="{w['work_url']}" target="_blank" rel="noopener">{th}</a>
+  </td>
+  <td class="title-cell">
+    <div class="work-title"><a href="{w['work_url']}" target="_blank" rel="noopener">{w['title']}</a></div>
+    <div class="work-circle">{w['voice_actor']}</div>
+    {tg}
+  </td>
+  <td style="font-size:11px;color:var(--text-sub)">{w['voice_actor']}</td>
+  <td><span class="rise-pill">▲{rise}位UP</span></td>
+  <td class="chart-cell"><canvas id="{canvas_id}" class="chart-wrap" data-pid="{w['product_id']}"></canvas></td>
+</tr>"""
 
 def extract_preorders(works, work_meta):
-    """scheduled_dateが設定されている（発売予定日が未来の）作品を近日配信予定として抽出"""
+    """scheduled_dateが設定されている作品を近日配信予定として抽出"""
     preorders = []
-    # デバッグ：scheduled_dateを持つwork_metaエントリを確認
-    scheduled_in_meta = {pid: v for pid, v in work_meta.items() if v.get("scheduled_date")}
-    print(f"  [DEBUG] scheduled_date持ちの作品（work_meta）: {len(scheduled_in_meta)}件")
-    for pid, v in list(scheduled_in_meta.items())[:3]:
-        print(f"    pid={pid} scheduled={v.get('scheduled_date')} registered={v.get('registered_date')}")
-
     for w in works:
         pid = w["product_id"]
         scheduled = w.get("scheduled_date", "") or work_meta.get(pid, {}).get("scheduled_date", "")
@@ -643,7 +702,6 @@ def extract_preorders(works, work_meta):
             })
     preorders.sort(key=lambda x: x["scheduled_date"])
     return preorders[:5]
-
 
 def make_preorder_row(w, index):
     pid = w["product_id"]
@@ -660,25 +718,22 @@ def make_preorder_row(w, index):
     tag_html = "".join(f'<span class="gtag">{t}</span>' for t in tags[:4])
     registered_span = f'<span class="work-date">予約開始: {registered_date}</span>' if registered_date else ""
     return f"""<tr>
-            <td class="thumb-wrap">
-                <span class="thumb-rank">{rb}</span>
-                <a href="{url}" target="_blank" rel="noopener"><img src="{img_url}" alt="" loading="lazy"></a>
-            </td>
-            <td class="title-cell">
-                <div class="work-title"><a href="{url}" target="_blank" rel="noopener">{title}</a></div>
-                <div class="work-circle">{registered_span}{voice}</div>
-                <div class="genres">{tag_html}</div>
-            </td>
-            <td style="font-size:11px;color:var(--text-sub)">{voice}</td>
-            <td class="release-date-cell">{scheduled_date}</td>
-        </tr>"""
-
+  <td class="thumb-wrap">
+    <span class="thumb-rank">{rb}</span>
+    <a href="{url}" target="_blank" rel="noopener"><img src="{img_url}" alt="" loading="lazy"></a>
+  </td>
+  <td class="title-cell">
+    <div class="work-title"><a href="{url}" target="_blank" rel="noopener">{title}</a></div>
+    <div class="work-circle">{registered_span}{voice}</div>
+    <div class="genres">{tag_html}</div>
+  </td>
+  <td style="font-size:11px;color:var(--text-sub)">{voice}</td>
+  <td class="release-date-cell">{scheduled_date}</td>
+</tr>"""
 
 def generate_html(ranking, preorders, graph_data, today_str, total_works, new_today, work_meta, today):
-    # TOP10のみ表示
     top10 = ranking[:10]
 
-    # 前日ランク取得用マップ
     prev_map = {}
     today_dt = datetime.strptime(today_str.replace("/", "-"), "%Y-%m-%d")
     prev_date = (today_dt - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -689,39 +744,36 @@ def generate_html(ranking, preorders, graph_data, today_str, total_works, new_to
             if v and v <= 30:
                 prev_map[pid] = v
 
-    # ランキング行
     ranking_rows = []
     for i, w in enumerate(top10):
         pid = w["product_id"]
         prev = prev_map.get(pid, 0)
         rank_change = (prev - w["rank"]) if prev else 0
-        # 新着 = 当日新着一覧で初めて登録された作品のみ
         is_new = work_meta.get(pid, {}).get("registered_date") == today
         ranking_rows.append(make_row(w, rank_change, is_new, f"wc_{i+1}"))
 
-    # 近日配信予定セクション
     if preorders:
         rows = [make_preorder_row(w, i) for i, w in enumerate(preorders[:2])]
         preorder_section = f"""<div class="section">
-    <div class="section-head">
-        <span style="font-size:16px">🔔</span>
-        <span class="section-title">近日配信予定</span>
-        <span class="section-badge">配信開始前の作品</span>
-    </div>
-    <div class="table-card">
-    <table>
-        <colgroup>
-            <col style="width:150px"><col style="width:auto">
-            <col style="width:10%"><col style="width:12%">
-        </colgroup>
-        <thead>
-            <tr><th></th><th>タイトル / 予約開始日 / ジャンル</th><th>声優</th><th>発売予定日</th></tr>
-        </thead>
-        <tbody>
+<div class="section-head">
+<span style="font-size:16px">🔔</span>
+<span class="section-title">近日配信予定</span>
+<span class="section-badge">配信開始前の作品</span>
+</div>
+<div class="table-card">
+<table>
+<colgroup>
+<col style="width:150px"><col style="width:auto">
+<col style="width:10%"><col style="width:12%">
+</colgroup>
+<thead>
+<tr><th></th><th>タイトル / 予約開始日 / ジャンル</th><th>声優</th><th>発売予定日</th></tr>
+</thead>
+<tbody>
 {"".join(rows)}
-        </tbody>
-    </table>
-    </div>
+</tbody>
+</table>
+</div>
 </div>"""
     else:
         preorder_section = ""
@@ -745,22 +797,29 @@ def generate_html(ranking, preorders, graph_data, today_str, total_works, new_to
 def run():
     today = now_jst().strftime("%Y-%m-%d")
     today_str = now_jst().strftime("%Y/%m/%d")
+
     print(f"\n=== ポケドラ スクレイピング開始: {today} ===")
 
     store = "adt"
     history = load_history()
-
-    # 新着一覧から発売日を先に取得・蓄積（ランキング作品への付与に使うため先行実行）
     work_meta = load_work_meta()
+
     with sync_playwright() as p_new:
         browser_new = p_new.chromium.launch()
         page_new = browser_new.new_page(user_agent=(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         ))
+
+        # fetch_new_works前のpidセットを記録
+        pids_before = set(work_meta.keys())
+
         work_meta = fetch_new_works(page_new, store, work_meta, today)
         browser_new.close()
-    save_work_meta(work_meta)
+        save_work_meta(work_meta)
+
+        # 今日新たにwork_metaに追加されたpidを特定
+        new_pids_today = set(work_meta.keys()) - pids_before
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -769,10 +828,8 @@ def run():
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         ))
 
-        # オトナ向けのみメインページとして生成（がるまに方式に合わせる）
         label, url = CATEGORIES[store]
         print(f"\n--- {label} ---")
-
         works = fetch_ranking(page, store, url)
         browser.close()
 
@@ -784,33 +841,26 @@ def run():
     for w in works:
         pid = w["product_id"]
         meta_entry = work_meta.get(pid, {})
-
         scheduled = meta_entry.get("scheduled_date", "")
         registered = meta_entry.get("registered_date", "")
         release = meta_entry.get("release_date", "")
 
-        # 旧形式（release_dateのみ、scheduled_date/registered_dateなし）の場合
-        # タイトルから再解析してscheduled_dateを復元する
         if release and not scheduled and not registered:
             dm = re.search(r"《?配信開始は(\d{4})年(\d{1,2})月(\d{1,2})日", w["title"])
             if dm:
-                # タイトルに配信開始日あり → 旧release_dateは誤り、scheduled_dateとして再設定
                 scheduled = f"{dm.group(1)}-{int(dm.group(2)):02d}-{int(dm.group(3)):02d}"
                 work_meta[pid]["scheduled_date"] = scheduled
-                work_meta[pid]["registered_date"] = release  # 旧release_dateを予約開始日として転用
+                work_meta[pid]["registered_date"] = release
                 registered = release
                 del work_meta[pid]["release_date"]
                 release = ""
-                print(f"  旧データ移行: {pid} scheduled={scheduled} registered={registered}")
-            # タイトルに配信開始日なし → release_dateはそのまま発売日として正しい
+                print(f" 旧データ移行: {pid} scheduled={scheduled} registered={registered}")
 
-        # 発売予定日を過ぎていれば発売日として確定
         if scheduled and today >= scheduled and not release:
             work_meta[pid]["release_date"] = scheduled
             release = scheduled
-            print(f"  発売日確定: {pid} → {scheduled}")
+            print(f" 発売日確定: {pid} → {scheduled}")
 
-        # 表示用フィールドを設定
         if release:
             w["release_date"] = release
             w["scheduled_date"] = ""
@@ -820,12 +870,10 @@ def run():
             w["scheduled_date"] = scheduled
             w["registered_date"] = registered
         else:
-            # 発売日・発売予定日ともに不明 → 表示しない（勝手に確定させない）
             w["release_date"] = ""
             w["scheduled_date"] = ""
             w["registered_date"] = registered
 
-    # work_metaを更新保存
     save_work_meta(work_meta)
 
     # JSON保存
@@ -833,11 +881,7 @@ def run():
     history = update_history(history, store, today, works)
     save_history(history)
 
-    # 前日データ
-    prev_date = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-    prev_data = history.get(store, {}).get(prev_date, {})
-
-    # 近日配信予定（タイトルに配信開始日を含む作品）
+    # 近日配信予定
     preorders = extract_preorders(works, work_meta)
 
     # グラフデータ（TOP10 + 近日配信予定）
@@ -847,19 +891,22 @@ def run():
     ))
     graph_data = build_graph_data(history, store, all_pids, today)
 
-    # ranking-hub用：graph_dataを単体JSONとして保存
     graph_json = json.dumps(graph_data, ensure_ascii=False)
-    # data/（履歴保持用）とdocs/data/（GitHub Pages配信用）の両方に保存
     (DATA_DIR / f"graph_{store}.json").write_text(graph_json, encoding="utf-8")
     docs_data_dir = Path("docs") / "data"
     docs_data_dir.mkdir(parents=True, exist_ok=True)
     (docs_data_dir / f"graph_{store}.json").write_text(graph_json, encoding="utf-8")
-    print(f"  graph_{store}.json 保存完了（{len(graph_data)}件）")
-    # 統計
-    total_works = len(works)
+    print(f" graph_{store}.json 保存完了（{len(graph_data)}件）")
+
+    # all_works.csvに新着を追記（ランキング情報を補完に使う）
+    existing_pids = load_all_works_pids()
+    truly_new_pids = new_pids_today - existing_pids  # CSV未登録のもののみ
+    append_new_works_to_csv(truly_new_pids, work_meta, works)
+
+    # 統計（total_worksはCSV全件数を使用）
+    total_works = get_all_works_count()
     new_today = sum(1 for w in works if work_meta.get(w["product_id"], {}).get("registered_date") == today)
 
-    # ranking-hub用：統計情報を単体JSONとして保存
     new_work_ids = [w["product_id"] for w in works if work_meta.get(w["product_id"], {}).get("registered_date") == today]
     meta = {
         "updated": today_str,
@@ -872,8 +919,8 @@ def run():
                 "id": w["product_id"],
                 "title": w.get("clean_title", w["title"]),
                 "voice_actor": w.get("voice_actor", ""),
-                "release_date": w.get("scheduled_date", ""),   # 発売予定日
-                "registered_date": w.get("registered_date", ""),  # 予約開始日
+                "release_date": w.get("scheduled_date", ""),
+                "registered_date": w.get("registered_date", ""),
                 "thumb_url": w["thumb_url"],
                 "work_url": w["work_url"],
                 "tags": w.get("tags", [])[:4],
@@ -884,12 +931,11 @@ def run():
     meta_json = json.dumps(meta, ensure_ascii=False)
     (DATA_DIR / f"meta_{store}.json").write_text(meta_json, encoding="utf-8")
     (Path("docs") / "data" / f"meta_{store}.json").write_text(meta_json, encoding="utf-8")
-    print(f"  meta_{store}.json 保存完了（近日配信予定: {len(preorders)}件）")
+    print(f" meta_{store}.json 保存完了（近日配信予定: {len(preorders)}件）")
 
     # HTML生成
     html = generate_html(works, preorders, graph_data, today_str, total_works, new_today, work_meta, today)
 
-    # docs/index.html に出力（GitHub Pages用）
     docs_dir = Path("docs")
     docs_dir.mkdir(exist_ok=True)
     (docs_dir / "index.html").write_text(html, encoding="utf-8")
