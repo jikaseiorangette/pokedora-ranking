@@ -90,7 +90,7 @@ def fetch_ranking(page, store, url):
             vas = [a.get_text(strip=True) for a in container.select("a[href*='tag_type=1']") if a.get_text(strip=True)]
             voice_actor = "、".join(vas)
             ct = container.get_text()
-            for tc in ["NEW", "配信限定シチュエーション", "シチュエーションCD", "ドラマCD", "割引", "特典あり"]:
+            for tc in ["配信限定シチュエーション", "シチュエーションCD", "ドラマCD", "割引", "特典あり"]:
                 if tc in ct:
                     tags.append(tc)
 
