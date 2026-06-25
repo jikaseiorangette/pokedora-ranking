@@ -235,6 +235,15 @@ def update_history(history, store, today, works):
     for pid, rank in today_ranked.items():
         today_data[pid] = rank
 
+    # all_works.csvの全pidを圏外（31）として追加（発売済み未追跡作品の圏外記録）
+    all_works_path = DATA_DIR / "all_works.csv"
+    if all_works_path.exists():
+        with all_works_path.open(encoding="utf-8-sig") as f:
+            for row in csv_module.DictReader(f):
+                pid = row.get("product_id", "")
+                if pid and pid not in today_data:
+                    today_data[pid] = 31  # 圏外
+
     history[store][today] = today_data
 
     cutoff = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=90)).strftime("%Y-%m-%d")
